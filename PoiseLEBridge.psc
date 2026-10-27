@@ -14,7 +14,7 @@ Event OnInit()
 EndEvent
 
 ; sender = the victim. numArg = sequence * 4 + tier (tier 1..3). strArg = form id of the attacker (decimal, may be negative).
-Event OnPoiseStagger(string eventName, string strArg, float numArg, Form sender)
+Function OnPoiseStagger(string eventName, string strArg, float numArg, Form sender)
 	int packed = numArg as int
 	int tier = packed % 4
 	Actor victim = sender as Actor
@@ -34,7 +34,7 @@ Event OnPoiseStagger(string eventName, string strArg, float numArg, Form sender)
 		endif
 	endif
 	PoiseLENative.Ack(packed)
-EndEvent
+EndFunction
 
 Spell Function GetSpellForTier(int tier)
 	if tier <= 1
