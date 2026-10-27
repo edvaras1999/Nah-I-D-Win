@@ -6,7 +6,7 @@
 - **Postura** (barra lenta, estilo Sekiro): cada golpe enche-a, ela baixa sozinha. Encheu por completo: **BleedOut** (ajoelhado e indefeso).
 - Golpes bloqueados enchem as duas barras so um pouco e nao dao stagger. A dificuldade da postura esta no `.ini` (`[Posture] Difficulty`).
 
-Estado: **v0.2.0** (ainda nao testado no jogo). Ainda por fazer: bloqueio perfeito (Inpa Sekiro), dano extra durante o BleedOut, MCM.
+Estado: **v0.3.0** (ainda nao testado no jogo). Novo: estamina por balanco (jogador) e por golpe (NPCs), empurrao no stagger pesado em condicoes especificas, barra de risco no TrueHUD. Ainda por fazer: bloqueio perfeito (Inpa Sekiro), dano extra durante o BleedOut, MCM, segunda barra propria.
 
 ## Como compilar (tudo no GitHub)
 1. Cria um repositorio novo e envia estes arquivos mantendo as pastas.

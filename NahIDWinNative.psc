@@ -12,3 +12,7 @@ float Function GetBleedSeconds() global native
 
 ; Chamada quando o BleedOut acabou (so para o log).
 Function BleedDone(int packed) global native
+
+; Custo de estamina por balanco do jogador (0 = desligado) e forca do empurrao (0 = desligado). Vem do .ini.
+float Function GetSwingCost() global native
+float Function GetKnockbackForce() global native

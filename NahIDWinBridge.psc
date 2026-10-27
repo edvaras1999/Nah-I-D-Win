@@ -3,6 +3,8 @@ Scriptname NahIDWinBridge extends Quest
   ("NahIDWin_Stagger") so quando e preciso reagir. Este script recebe-o e:
    tipo 1,2,3 = stagger leve / medio / pesado  -> lanca um de tres feiticos de stagger do jogo
    tipo 4     = BleedOut (a postura quebrou)   -> toca a animacao de ajoelhado durante alguns segundos
+   tipo 5     = stagger pesado + empurrao (golpe forte, arma pesada, criatura gigante)
+  Alem disso, cada balanco de arma do JOGADOR gasta estamina (evento de animacao, sem ciclos).
   Nao ha ciclos nem consultas repetidas. }
 
 Spell sp1
@@ -11,7 +13,30 @@ Spell sp3
 
 Event OnInit()
 	RegisterForModEvent("NahIDWin_Stagger", "OnNahStagger")
+	RegisterForModEvent("NahIDWin_Load", "OnNahLoad")
+	RegisterSwing()
 	NahIDWinNative.ScriptReady()
+EndEvent
+
+; A DLL avisa quando um save e carregado: os registos de animacao perdem-se, entao registamos de novo.
+Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
+	RegisterSwing()
+EndFunction
+
+Function RegisterSwing()
+	Actor pl = Game.GetPlayer()
+	if pl
+		RegisterForAnimationEvent(pl, "weaponSwing")
+		RegisterForAnimationEvent(pl, "weaponLeftSwing")
+	endif
+EndFunction
+
+; Cada balanco de arma do jogador gasta estamina (mesmo sem acertar). O valor vem do .ini.
+Event OnAnimationEvent(ObjectReference akSource, string asEventName)
+	float cost = NahIDWinNative.GetSwingCost()
+	if cost > 0.0
+		Game.GetPlayer().DamageActorValue("Stamina", cost)
+	endif
 EndEvent
 
 ; sender = a vitima. numArg = sequencia * 8 + tipo (1..4). strArg = form id do agressor (decimal, pode ser negativo).
@@ -24,7 +49,11 @@ Function OnNahStagger(string eventName, string strArg, float numArg, Form sender
 			DoBleedOut(victim, packed)
 			return
 		endif
-		Spell sp = GetSpellForTier(kind)
+		int tierSpell = kind
+		if kind == 5
+			tierSpell = 3
+		endif
+		Spell sp = GetSpellForTier(tierSpell)
 		if sp
 			Actor attacker = None
 			int attackerId = strArg as int
@@ -35,6 +64,12 @@ Function OnNahStagger(string eventName, string strArg, float numArg, Form sender
 				sp.Cast(attacker, victim)
 			else
 				sp.Cast(victim, victim)
+			endif
+			if kind == 5
+				float force = NahIDWinNative.GetKnockbackForce()
+				if force > 0.0 && attacker && attacker != victim
+					victim.PushActorAway(attacker, force)
+				endif
 			endif
 		endif
 	endif

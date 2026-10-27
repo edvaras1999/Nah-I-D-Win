@@ -43,7 +43,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.2.0 (Poise + Postura + BleedOut + diagnostico)"
+#define PLUGIN_VERSION_STR	"0.3.0 (Poise + Postura + BleedOut + estamina + empurrao)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -167,11 +167,29 @@ namespace
 		float	bleedSeconds;			// duracao do BleedOut
 		float	bleedExtraImmune;		// segundos de imunidade depois de levantar
 
+		// estamina: custo de bater (separado do poise)
+		int		stamEnabled;
+		float	swingCostPlayer;		// por balanco de arma do jogador (feito pelo script ponte, evento de animacao)
+		float	hitCostNpc;				// por golpe de NPC/criatura (feito na DLL)
+
+		// empurrao no stagger pesado (so em condicoes especificas)
+		int		kbEnabled;
+		float	kbForce;				// 0 = desligado
+		int		kbPlayer;				// tambem empurrar o jogador
+		int		kbOnPower;				// golpe forte (inclui o de corrida e o carregado)
+		int		kbOnGiant;				// atacante de raca grande (massa >= kbGiantMass)
+		float	kbGiantMass;
+		int		kbOnHeavyWeapon;		// arma de duas maos ou pesada
+		float	kbHeavyWeight;
+
+		// avisos e golpes proprios
+		float	poiseWarnFraction;		// a barra pisca quando o poise desce abaixo disto (0 = desligado)
+		int		ignoreOwnSpells;		// 1 = nao contar os feiticos de stagger deste mod como dano
 		// TrueHUD
 		int		hudEnabled;
 		int		hudPlayer;			// mostrar a barra tambem para o jogador
 		int		hudFlash;			// piscar a barra quando algo quebra
-		int		hudBar;				// 0 = barra do poise, 1 = barra da postura
+		int		hudBar;				// 0 = barra do poise, 1 = barra da postura, 2 = a mais perto de quebrar
 
 		// diagnostico
 		int		diag;				// 1 = diagnostico ligado
@@ -239,8 +257,8 @@ namespace
 		c.regenSeconds	= IniF("Poise", "RegenSeconds", 30.0f);
 		c.regenDelay	= IniF("Poise", "RegenDelaySeconds", 2.0f);
 		c.playerTakenMult = IniF("Poise", "PlayerTakenMult", 1.5f);
-		c.poiseMaxScalePlayer = IniF("Poise", "MaxScalePlayer", 0.6f);
-		c.poiseMaxScaleNpc = IniF("Poise", "MaxScaleNPC", 1.0f);
+		c.poiseMaxScalePlayer = IniF("Poise", "MaxScalePlayer", 1.8f);
+		c.poiseMaxScaleNpc = IniF("Poise", "MaxScaleNPC", 3.0f);
 		c.npcTakenMult	= IniF("Poise", "NPCTakenMult", 2.5f);
 
 		c.postureEnabled	= IniI("Posture", "Enabled", 1);
@@ -249,15 +267,31 @@ namespace
 		c.postureArmorFrac	= IniF("Posture", "ArmorFraction", 0.3f);
 		c.postureDifficulty	= IniF("Posture", "Difficulty", 1.0f);
 		c.postureDamageMult	= IniF("Posture", "DamageMult", 1.0f);
-		c.postureBlockedMult = IniF("Posture", "BlockedMult", 0.3f);
+		c.postureBlockedMult = IniF("Posture", "BlockedMult", 0.12f);
 		c.postureRegenSeconds = IniF("Posture", "RegenSeconds", 60.0f);
 		c.postureRegenDelay	= IniF("Posture", "RegenDelaySeconds", 3.0f);
 		c.postureResetFraction = IniF("Posture", "ResetFraction", 0.0f);
 		c.postureLowHealthBonus = IniF("Posture", "LowHealthBonus", 1.0f);
-		c.postureScalePlayer = IniF("Posture", "ScalePlayer", 1.0f);
-		c.postureScaleNpc	= IniF("Posture", "ScaleNPC", 1.0f);
+		c.postureScalePlayer = IniF("Posture", "ScalePlayer", 3.0f);
+		c.postureScaleNpc	= IniF("Posture", "ScaleNPC", 3.0f);
 		c.bleedSeconds		= IniF("Posture", "BleedOutSeconds", 4.0f);
 		c.bleedExtraImmune	= IniF("Posture", "BleedOutImmuneSeconds", 3.0f);
+
+		c.stamEnabled		= IniI("Stamina", "Enabled", 1);
+		c.swingCostPlayer	= IniF("Stamina", "SwingCostPlayer", 8.0f);
+		c.hitCostNpc		= IniF("Stamina", "HitCostNPC", 6.0f);
+
+		c.kbEnabled			= IniI("Knockback", "Enabled", 1);
+		c.kbForce			= IniF("Knockback", "Force", 1.0f);
+		c.kbPlayer			= IniI("Knockback", "Player", 1);
+		c.kbOnPower			= IniI("Knockback", "OnPowerAttack", 1);
+		c.kbOnGiant			= IniI("Knockback", "OnGiantCreature", 1);
+		c.kbGiantMass		= IniF("Knockback", "GiantMassMin", 3.0f);
+		c.kbOnHeavyWeapon	= IniI("Knockback", "OnHeavyWeapon", 1);
+		c.kbHeavyWeight		= IniF("Knockback", "HeavyWeaponMinWeight", 15.0f);
+
+		c.poiseWarnFraction	= IniF("TrueHUD", "PoiseWarnFraction", 0.3f);
+		c.ignoreOwnSpells	= IniI("Diagnostics", "IgnoreOwnSpells", 1);
 
 		c.weightMult		= IniF("Damage", "WeightMult", 0.5f);
 		c.attackerMassMult	= IniF("Damage", "AttackerMassMult", 1.0f);
@@ -274,14 +308,14 @@ namespace
 		c.staggerStatMult	= IniF("Damage", "WeaponStaggerMult", 1.0f);
 		c.powerMult			= IniF("Damage", "PowerAttackMult", 2.0f);
 		c.bashMult			= IniF("Damage", "BashMult", 1.5f);
-		c.blockedMult		= IniF("Damage", "BlockedMult", 0.35f);
+		c.blockedMult		= IniF("Damage", "BlockedMult", 0.15f);
 		c.sneakMult			= IniF("Damage", "SneakMult", 1.0f);
 		c.rangedMult		= IniF("Damage", "RangedMult", 0.8f);
 
 		c.hudEnabled	= IniI("TrueHUD", "Enabled", 1);
 		c.hudPlayer		= IniI("TrueHUD", "ShowForPlayer", 1);
 		c.hudFlash		= IniI("TrueHUD", "FlashOnBreak", 1);
-		c.hudBar		= IniI("TrueHUD", "Bar", 1);
+		c.hudBar		= IniI("TrueHUD", "Bar", 2);
 
 		c.diag			= IniI("Diagnostics", "Enabled", 1);
 		c.logHitsMax	= IniI("Diagnostics", "LogHitsMax", 400);
@@ -473,6 +507,8 @@ namespace
 		ActorStats		victim;
 		ActorStats		attacker;
 		bool			attackerIsActor;
+		Actor *			attackerActor;
+		bool			ownSpell;
 		UInt32			flags;
 		UInt32			sourceId;
 		UInt32			projId;
@@ -499,6 +535,7 @@ namespace
 				if(caster->formType == kFormType_Character)
 				{
 					h->attackerIsActor = ReadActorStats((Actor *)caster, &h->attacker);
+					h->attackerActor = (Actor *)caster;
 				}
 			}
 			h->flags = evn->flags;
@@ -517,7 +554,15 @@ namespace
 						h->weaponStagger = w->stagger();
 						h->weaponType = (int)w->type();
 					}
-					else h->sourceKind = 2;
+					else
+					{
+						h->sourceKind = 2;
+						if(g_cfg.ignoreOwnSpells && form->formType == kFormType_Spell)
+						{
+							TESFullName * fn = DYNAMIC_CAST(form, TESForm, TESFullName);
+							if(fn && fn->name.data && strncmp(fn->name.data, "NahIDWin", 8) == 0) h->ownSpell = true;
+						}
+					}
 				}
 			}
 			return true;
@@ -597,6 +642,28 @@ namespace
 		}
 	}
 
+	// Estamina (valor de ator 26): escreve e verifica. Sem objetos com destrutor.
+	bool AddStamina(Actor * a, float delta, float * oldv, float * newv)
+	{
+		__try
+		{
+			const float cur = a->actorValueOwner.GetCurrent(26);
+			float nv = cur + delta;
+			if(nv < 0.0f) nv = 0.0f;
+			a->actorValueOwner.SetCurrent(26, nv);
+			*oldv = cur;
+			*newv = a->actorValueOwner.GetCurrent(26);
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool			g_stamBroken = false;
+	volatile LONG	g_stamHits = 0;
+
 	// ------------------------------------------------------------------ TrueHUD
 	THUD::IVTrueHUD1 *	g_hud = NULL;
 	bool				g_hudTried = false;
@@ -605,6 +672,7 @@ namespace
 	{
 		ActorStats s;
 		if(!a || !ReadActorStats(a, &s)) return 1.0f;
+		if(g_cfg.hudBar == 2) return 100.0f;
 		return (g_cfg.hudBar == 1) ? ComputeMaxPosture(s) : ComputeMax(s);
 	}
 
@@ -614,13 +682,21 @@ namespace
 		ActorStats s;
 		if(!a || !ReadActorStats(a, &s)) return 0.0f;
 		const float mx = ComputeMax(s), mp = ComputeMaxPosture(s);
-		if((s.isPlayer && !g_cfg.applyPlayer) || (!s.isPlayer && !g_cfg.applyNPCs)) return (g_cfg.hudBar == 1) ? 0.0f : mx;
+		if((s.isPlayer && !g_cfg.applyPlayer) || (!s.isPlayer && !g_cfg.applyNPCs)) return (g_cfg.hudBar == 0) ? mx : 0.0f;
 		const DWORD now = GetTickCount();
 		Lock();
 		PoiseState & st = FindOrCreate(s.id, mx, mp, now);
 		Regen(st, now);
 		RegenPosture(st, now);
-		const float cur = (g_cfg.hudBar == 1) ? st.pCur : st.cur;
+		float cur;
+		if(g_cfg.hudBar == 2)
+		{
+			// "risco": o que estiver mais perto de quebrar (0 = tranquilo, 100 = vai quebrar)
+			float rp = (st.max > 0.0f) ? (1.0f - st.cur / st.max) : 0.0f;
+			float rs = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
+			cur = 100.0f * (rp > rs ? rp : rs);
+		}
+		else cur = (g_cfg.hudBar == 1) ? st.pCur : st.cur;
 		Unlock();
 		return cur;
 	}
@@ -692,6 +768,16 @@ namespace
 		PoiseModEvent evn("NahIDWin_Stagger", arg, packed, (TESForm *)victim);
 		if(SafeSend(d, &evn)) InterlockedIncrement(&g_sent);
 		else { InterlockedIncrement(&g_faults); _MESSAGE("stagger: sending the mod event FAILED (caught)"); }
+	}
+
+	// Avisa o script ponte de que um save foi carregado (para registar de novo os eventos de animacao do jogador).
+	void SendLoadEvent()
+	{
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_Load", "", 0.0f, NULL);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
 	// ------------------------------------------------------------------ diagnostico
@@ -781,6 +867,7 @@ namespace
 
 		HitInfo h;
 		if(!ReadHit(evn, &h)) return;
+		if(h.ownSpell) return;
 		if(h.victimRef == evn->caster) return;
 		if(!h.victim.alive) return;
 		if(h.victim.isPlayer ? !g_cfg.applyPlayer : !g_cfg.applyNPCs) return;
@@ -856,6 +943,36 @@ namespace
 			pAfter = st.pCur;
 		}
 		Unlock();
+
+		// empurrao: so no stagger pesado e so em condicoes especificas
+		if(kind == 3 && g_cfg.kbEnabled && g_cfg.kbForce > 0.0f && (!h.victim.isPlayer || g_cfg.kbPlayer))
+		{
+			bool heavy = false;
+			if(g_cfg.kbOnPower && heavyHit) heavy = true;
+			if(g_cfg.kbOnGiant && h.attackerIsActor && h.attacker.mass >= g_cfg.kbGiantMass) heavy = true;
+			if(g_cfg.kbOnHeavyWeapon && h.sourceKind == 1 && (h.weaponType == 5 || h.weaponType == 6 || h.weaponWeight >= g_cfg.kbHeavyWeight)) heavy = true;
+			if(heavy) kind = 5;
+		}
+
+		// aviso: o poise desceu abaixo do limite (o jogador sabe que esta perto do stagger pesado)
+		if(g_cfg.poiseWarnFraction > 0.0f && applied && !poiseBroke && mx > 0.0f &&
+			before / mx >= g_cfg.poiseWarnFraction && after / mx < g_cfg.poiseWarnFraction) HudFlash(h.victimRef);
+
+		// estamina do atacante NPC por golpe (o jogador paga por balanco, no script ponte)
+		if(g_cfg.stamEnabled && g_cfg.hitCostNpc > 0.0f && !g_stamBroken && h.attackerActor && h.attackerIsActor &&
+			!h.attacker.isPlayer && h.attacker.alive && h.sourceKind != 2)
+		{
+			float o = 0.0f, n = 0.0f;
+			const bool ok = AddStamina(h.attackerActor, -g_cfg.hitCostNpc, &o, &n);
+			InterlockedIncrement(&g_stamHits);
+			if(!ok || (o > g_cfg.hitCostNpc * 1.5f && n > o - g_cfg.hitCostNpc * 0.5f))
+			{
+				g_stamBroken = true;
+				_MESSAGE("WARNING: writing the attacker's stamina does not work on this game (%s: %.1f -> %.1f). NPC stamina cost disabled.", ok ? "no effect" : "crashed (caught)", o, n);
+			}
+			else if(g_cfg.diag && g_stamHits <= 5) _MESSAGE("stamina: NPC %08X paid %.1f for a hit (%.1f -> %.1f)", h.attackerId, g_cfg.hitCostNpc, o, n);
+		}
+
 		if(applied) InterlockedIncrement(&g_applied);
 		if(poiseBroke) InterlockedIncrement(&g_breaks);
 		if(postureBroke) InterlockedIncrement(&g_postureBreaks);
@@ -873,8 +990,8 @@ namespace
 
 		if(kind)
 		{
-			if(kind >= 3) _MESSAGE("%s: victim=%08X attacker=%08X (mode %d)", kind == 4 ? "POSTURE BREAK -> BLEEDOUT" : "POISE BREAK -> heavy stagger", h.victim.id, h.attackerId, g_cfg.staggerMode);
-			if(g_cfg.staggerMode == 1 && kind != 4) NativeStagger(h.victimRef);
+			if(kind >= 3) _MESSAGE("%s: victim=%08X attacker=%08X (mode %d)", kind == 4 ? "POSTURE BREAK -> BLEEDOUT" : (kind == 5 ? "POISE BREAK -> heavy stagger + KNOCKBACK" : "POISE BREAK -> heavy stagger"), h.victim.id, h.attackerId, g_cfg.staggerMode);
+			if(g_cfg.staggerMode == 1 && kind != 4 && kind != 5) NativeStagger(h.victimRef);
 			else SendStaggerEvent(h.victimRef, h.attackerId, kind);
 			if(kind >= 3) HudFlash(h.victimRef);
 		}
@@ -927,6 +1044,16 @@ namespace
 		return g_cfg.bleedSeconds;
 	}
 
+	float N_GetSwingCost(StaticFunctionTag *)
+	{
+		return g_cfg.stamEnabled ? g_cfg.swingCostPlayer : 0.0f;
+	}
+
+	float N_GetKnockbackForce(StaticFunctionTag *)
+	{
+		return g_cfg.kbForce;
+	}
+
 	void N_BleedDone(StaticFunctionTag *, SInt32 packed)
 	{
 		if(g_cfg.diag) _MESSAGE("papyrus: bleedout #%d finished (the victim should be standing again)", (int)((packed >> 3) & 0x1FFFFF));
@@ -935,6 +1062,8 @@ namespace
 	bool RegisterPapyrus(VMClassRegistry * registry)
 	{
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetBleedSeconds", "NahIDWinNative", N_GetBleedSeconds, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetSwingCost", "NahIDWinNative", N_GetSwingCost, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetKnockbackForce", "NahIDWinNative", N_GetKnockbackForce, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("BleedDone", "NahIDWinNative", N_BleedDone, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("ScriptReady", "NahIDWinNative", N_ScriptReady, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));
@@ -961,6 +1090,7 @@ namespace
 			case SKSEMessagingInterface::kMessage_NewGame:
 			case SKSEMessagingInterface::kMessage_PostLoadGame:
 				DumpVtable();
+				SendLoadEvent();
 				break;
 
 			default:
