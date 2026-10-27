@@ -14,6 +14,30 @@ jobs:
       - name: Baixar o conteudo do repositorio
         uses: actions/checkout@v4
 
+      - name: Organizar os ficheiros em pastas (caso tenham sido enviados soltos)
+        shell: pwsh
+        run: |
+          $ws = $env:GITHUB_WORKSPACE
+          $map = [ordered]@{
+            'PoiseLE.cpp' = 'poise-le'; 'PoiseLE.vcxproj' = 'poise-le'; 'PoiseLE.rc' = 'poise-le'
+            'Engine.h' = 'poise-le'; 'Log.h' = 'poise-le'; 'exports.def' = 'poise-le'; 'LICENSE' = 'poise-le'
+            'PoiseLEBridge.psc' = 'papyrus\src'; 'PoiseLENative.psc' = 'papyrus\src'
+            'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'
+            'TESV_Papyrus_Flags.flg' = 'papyrus'
+            'PoiseLE.ini' = 'dist\Data\SKSE\Plugins'; 'PoiseLE.esp' = 'dist\Data'; 'PoiseLE.seq' = 'dist\Data\SEQ'
+            'make_esp.py' = 'tools'
+          }
+          foreach ($name in $map.Keys) {
+            $src = Join-Path $ws $name
+            if (Test-Path $src -PathType Leaf) {
+              $dir = Join-Path $ws $map[$name]
+              New-Item -ItemType Directory -Force $dir | Out-Null
+              Move-Item $src (Join-Path $dir $name) -Force
+              Write-Host "Movido para a pasta certa: $name -> $($map[$name])"
+            }
+          }
+
       - name: Preparar o MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -268,6 +292,30 @@ jobs:
       - name: Baixar o repositorio
         uses: actions/checkout@v4
 
+      - name: Organizar os ficheiros em pastas (caso tenham sido enviados soltos)
+        shell: pwsh
+        run: |
+          $ws = $env:GITHUB_WORKSPACE
+          $map = [ordered]@{
+            'PoiseLE.cpp' = 'poise-le'; 'PoiseLE.vcxproj' = 'poise-le'; 'PoiseLE.rc' = 'poise-le'
+            'Engine.h' = 'poise-le'; 'Log.h' = 'poise-le'; 'exports.def' = 'poise-le'; 'LICENSE' = 'poise-le'
+            'PoiseLEBridge.psc' = 'papyrus\src'; 'PoiseLENative.psc' = 'papyrus\src'
+            'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'
+            'TESV_Papyrus_Flags.flg' = 'papyrus'
+            'PoiseLE.ini' = 'dist\Data\SKSE\Plugins'; 'PoiseLE.esp' = 'dist\Data'; 'PoiseLE.seq' = 'dist\Data\SEQ'
+            'make_esp.py' = 'tools'
+          }
+          foreach ($name in $map.Keys) {
+            $src = Join-Path $ws $name
+            if (Test-Path $src -PathType Leaf) {
+              $dir = Join-Path $ws $map[$name]
+              New-Item -ItemType Directory -Force $dir | Out-Null
+              Move-Item $src (Join-Path $dir $name) -Force
+              Write-Host "Movido para a pasta certa: $name -> $($map[$name])"
+            }
+          }
+
       - name: Obter o compilador Caprica
         shell: pwsh
         env:
@@ -367,6 +415,30 @@ jobs:
     steps:
       - name: Baixar o repositorio
         uses: actions/checkout@v4
+
+      - name: Organizar os ficheiros em pastas (caso tenham sido enviados soltos)
+        shell: pwsh
+        run: |
+          $ws = $env:GITHUB_WORKSPACE
+          $map = [ordered]@{
+            'PoiseLE.cpp' = 'poise-le'; 'PoiseLE.vcxproj' = 'poise-le'; 'PoiseLE.rc' = 'poise-le'
+            'Engine.h' = 'poise-le'; 'Log.h' = 'poise-le'; 'exports.def' = 'poise-le'; 'LICENSE' = 'poise-le'
+            'PoiseLEBridge.psc' = 'papyrus\src'; 'PoiseLENative.psc' = 'papyrus\src'
+            'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'
+            'TESV_Papyrus_Flags.flg' = 'papyrus'
+            'PoiseLE.ini' = 'dist\Data\SKSE\Plugins'; 'PoiseLE.esp' = 'dist\Data'; 'PoiseLE.seq' = 'dist\Data\SEQ'
+            'make_esp.py' = 'tools'
+          }
+          foreach ($name in $map.Keys) {
+            $src = Join-Path $ws $name
+            if (Test-Path $src -PathType Leaf) {
+              $dir = Join-Path $ws $map[$name]
+              New-Item -ItemType Directory -Force $dir | Out-Null
+              Move-Item $src (Join-Path $dir $name) -Force
+              Write-Host "Movido para a pasta certa: $name -> $($map[$name])"
+            }
+          }
 
       - name: Baixar a DLL
         uses: actions/download-artifact@v4
