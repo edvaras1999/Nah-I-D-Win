@@ -21,9 +21,9 @@ jobs:
           $map = [ordered]@{
             'NahIDWin.cpp' = 'nahidwin'; 'NahIDWin.vcxproj' = 'nahidwin'; 'NahIDWin.rc' = 'nahidwin'
             'Engine.h' = 'nahidwin'; 'Log.h' = 'nahidwin'; 'exports.def' = 'nahidwin'; 'LICENSE' = 'nahidwin'
-            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'
+            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'; 'NahIDWinMCM.psc' = 'papyrus\src'
             'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
-            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Explosion.psc' = 'papyrus\stubs'; 'Sound.psc' = 'papyrus\stubs'; 'SKI_ConfigBase.psc' = 'papyrus\stubs'; 'SKI_QuestBase.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
             'TESV_Papyrus_Flags.flg' = 'papyrus'
             'NahIDWin.ini' = 'dist\Data\SKSE\Plugins'; 'NahIDWin.esp' = 'dist\Data'; 'NahIDWin.seq' = 'dist\Data\SEQ'
             'make_esp.py' = 'tools'
@@ -299,9 +299,9 @@ jobs:
           $map = [ordered]@{
             'NahIDWin.cpp' = 'nahidwin'; 'NahIDWin.vcxproj' = 'nahidwin'; 'NahIDWin.rc' = 'nahidwin'
             'Engine.h' = 'nahidwin'; 'Log.h' = 'nahidwin'; 'exports.def' = 'nahidwin'; 'LICENSE' = 'nahidwin'
-            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'
+            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'; 'NahIDWinMCM.psc' = 'papyrus\src'
             'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
-            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Explosion.psc' = 'papyrus\stubs'; 'Sound.psc' = 'papyrus\stubs'; 'SKI_ConfigBase.psc' = 'papyrus\stubs'; 'SKI_QuestBase.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
             'TESV_Papyrus_Flags.flg' = 'papyrus'
             'NahIDWin.ini' = 'dist\Data\SKSE\Plugins'; 'NahIDWin.esp' = 'dist\Data'; 'NahIDWin.seq' = 'dist\Data\SEQ'
             'make_esp.py' = 'tools'
@@ -364,7 +364,7 @@ jobs:
           $stubs = Join-Path $ws 'papyrus\stubs'
           $src   = Join-Path $ws 'papyrus\src'
           $flags = Join-Path $ws 'papyrus\TESV_Papyrus_Flags.flg'
-          $files = @((Join-Path $src 'NahIDWinNative.psc'), (Join-Path $src 'NahIDWinBridge.psc'))
+          $files = @((Join-Path $src 'NahIDWinNative.psc'), (Join-Path $src 'NahIDWinBridge.psc'), (Join-Path $src 'NahIDWinMCM.psc'))
 
           '=== inicio ===' | Out-File $log
 
@@ -384,10 +384,11 @@ jobs:
             $code = $LASTEXITCODE
             $bridge = Get-ChildItem $out -Recurse -Filter 'NahIDWinBridge.pex' -ErrorAction SilentlyContinue | Select-Object -First 1
             $native = Get-ChildItem $out -Recurse -Filter 'NahIDWinNative.pex' -ErrorAction SilentlyContinue | Select-Object -First 1
-            "codigo de saida: $code ; MCM.pex: $([bool]$bridge) ; Native.pex: $([bool]$native)" | Tee-Object -FilePath $log -Append
-            if ($code -eq 0 -and $bridge -and $native) {
-              # Poe os dois .pex na raiz da pasta out (o Caprica pode cria-los em subpastas).
-              foreach ($f in @($bridge, $native)) {
+            $mcm = Get-ChildItem $out -Recurse -Filter 'NahIDWinMCM.pex' -ErrorAction SilentlyContinue | Select-Object -First 1
+            "codigo de saida: $code ; Bridge.pex: $([bool]$bridge) ; Native.pex: $([bool]$native) ; MCM.pex: $([bool]$mcm)" | Tee-Object -FilePath $log -Append
+            if ($code -eq 0 -and $bridge -and $native -and $mcm) {
+              # Poe os .pex na raiz da pasta out (o Caprica pode cria-los em subpastas).
+              foreach ($f in @($bridge, $native, $mcm)) {
                 $dst = Join-Path $out $f.Name
                 if ($f.FullName -ne $dst) { Copy-Item $f.FullName $dst -Force }
               }
@@ -423,9 +424,9 @@ jobs:
           $map = [ordered]@{
             'NahIDWin.cpp' = 'nahidwin'; 'NahIDWin.vcxproj' = 'nahidwin'; 'NahIDWin.rc' = 'nahidwin'
             'Engine.h' = 'nahidwin'; 'Log.h' = 'nahidwin'; 'exports.def' = 'nahidwin'; 'LICENSE' = 'nahidwin'
-            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'
+            'NahIDWinBridge.psc' = 'papyrus\src'; 'NahIDWinNative.psc' = 'papyrus\src'; 'NahIDWinMCM.psc' = 'papyrus\src'
             'Actor.psc' = 'papyrus\stubs'; 'Form.psc' = 'papyrus\stubs'; 'Game.psc' = 'papyrus\stubs'
-            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
+            'ObjectReference.psc' = 'papyrus\stubs'; 'Quest.psc' = 'papyrus\stubs'; 'Spell.psc' = 'papyrus\stubs'; 'Debug.psc' = 'papyrus\stubs'; 'Explosion.psc' = 'papyrus\stubs'; 'Sound.psc' = 'papyrus\stubs'; 'SKI_ConfigBase.psc' = 'papyrus\stubs'; 'SKI_QuestBase.psc' = 'papyrus\stubs'; 'Utility.psc' = 'papyrus\stubs'
             'TESV_Papyrus_Flags.flg' = 'papyrus'
             'NahIDWin.ini' = 'dist\Data\SKSE\Plugins'; 'NahIDWin.esp' = 'dist\Data'; 'NahIDWin.seq' = 'dist\Data\SEQ'
             'make_esp.py' = 'tools'
@@ -467,7 +468,7 @@ jobs:
           if (-not $dll) { throw 'Nao encontrei a NahIDWin.dll.' }
           Copy-Item $dll.FullName $plug
 
-          foreach ($n in 'NahIDWinBridge.pex', 'NahIDWinNative.pex') {
+          foreach ($n in 'NahIDWinBridge.pex', 'NahIDWinNative.pex', 'NahIDWinMCM.pex') {
             $f = Get-ChildItem (Join-Path $ws 'dl\pex') -Recurse -Filter $n | Select-Object -First 1
             if (-not $f) { throw "Nao encontrei $n." }
             Copy-Item $f.FullName $scr
