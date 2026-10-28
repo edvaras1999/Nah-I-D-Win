@@ -16,3 +16,12 @@ Function BleedDone(int packed) global native
 ; Custo de estamina por balanco do jogador (0 = desligado) e forca do empurrao (0 = desligado). Vem do .ini.
 float Function GetSwingCost() global native
 float Function GetKnockbackForce() global native
+
+; Furia: tecla do jogador (0 = desligada), tipo de custo (0 vida, 1 estamina), pedido de ativacao.
+; TryRage devolve -1 se nao pode (recarga ou BleedOut) ou o custo a pagar (>= 0).
+int Function GetRageKey() global native
+int Function GetRageCostType() global native
+float Function TryRage() global native
+
+; Chamada quando o jogador levanta o bloqueio: abre a janela do parry.
+Function BlockStart() global native

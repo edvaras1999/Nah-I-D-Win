@@ -43,7 +43,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.3.0 (Poise + Postura + BleedOut + estamina + empurrao)"
+#define PLUGIN_VERSION_STR	"0.4.0 (Poise + Postura + BleedOut + parry + furia)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -148,6 +148,7 @@ namespace
 		int		lightPlayer;
 		int		lightNpc;
 		int		lightCooldownMs;	// tempo minimo entre dois staggers leves no mesmo ator
+		int		lightCooldownPlayerMs;	// idem, para o jogador
 		int		mediumOnPower;		// golpe forte (power attack) sem quebrar da stagger medio
 
 		// postura
@@ -183,6 +184,29 @@ namespace
 		float	kbHeavyWeight;
 
 		// avisos e golpes proprios
+		// parry proprio (janela depois de levantar o bloqueio)
+		int		parryEnabled;
+		int		parryWindowMs;
+		float	parryAttackerPosture;	// fracao da postura maxima do atacante que enche
+		int		parryAttackerStagger;	// 1 = o atacante leva stagger medio
+		float	parryDefPostureRecover;	// fracao da postura maxima que o defensor recupera
+		float	parryDefPoiseRecover;	// fracao do poise maximo que o defensor recupera
+		int		parryFx;				// faiscas e som (usa os do Inpa Sekiro se instalado)
+
+		// furia: imunidade temporaria em troca de vida ou estamina
+		int		rageEnabled;
+		int		rageKey;				// tecla (codigo DirectInput) do jogador. 34 = G
+		float	rageSeconds;
+		float	rageCooldown;
+		int		rageCostType;			// 0 = vida, 1 = estamina
+		float	rageCostPercent;		// percentagem do maximo
+		int		rageNpc;				// NPCs ativam sozinhos
+		float	rageNpcPosture;			// ativa quando a postura passa desta fracao
+		float	rageNpcPoise;			// ... ou o poise desce abaixo desta fracao
+		int		rageNpcChance;			// probabilidade (%) por golpe recebido quando as condicoes se cumprem
+		float	rageNpcCooldown;
+		float	rageNpcCostPercent;		// 0 = gratis para NPCs
+
 		float	poiseWarnFraction;		// a barra pisca quando o poise desce abaixo disto (0 = desligado)
 		int		ignoreOwnSpells;		// 1 = nao contar os feiticos de stagger deste mod como dano
 		// TrueHUD
@@ -243,11 +267,12 @@ namespace
 		c.nativeSlot	= IniI("Stagger", "NativeSlot", 1);
 		GetPrivateProfileStringA("Stagger", "NativeEvent", "staggerStart", c.nativeEvent, sizeof(c.nativeEvent), g_iniPath);
 		c.resetFraction	= IniF("Stagger", "ResetFraction", 1.0f);
-		c.immuneSeconds	= IniF("Stagger", "ImmuneSeconds", 1.2f);
+		c.immuneSeconds	= IniF("Stagger", "ImmuneSeconds", 2.5f);
 		c.lightEnabled	= IniI("Stagger", "LightEnabled", 1);
 		c.lightPlayer	= IniI("Stagger", "LightPlayer", 1);
 		c.lightNpc		= IniI("Stagger", "LightNPCs", 1);
 		c.lightCooldownMs = IniI("Stagger", "LightCooldownMs", 700);
+		c.lightCooldownPlayerMs = IniI("Stagger", "LightCooldownPlayerMs", 1500);
 		c.mediumOnPower	= IniI("Stagger", "MediumOnPowerAttack", 1);
 
 		c.massMult		= IniF("Poise", "MassMult", 20.0f);
@@ -257,8 +282,8 @@ namespace
 		c.regenSeconds	= IniF("Poise", "RegenSeconds", 30.0f);
 		c.regenDelay	= IniF("Poise", "RegenDelaySeconds", 2.0f);
 		c.playerTakenMult = IniF("Poise", "PlayerTakenMult", 1.5f);
-		c.poiseMaxScalePlayer = IniF("Poise", "MaxScalePlayer", 1.8f);
-		c.poiseMaxScaleNpc = IniF("Poise", "MaxScaleNPC", 3.0f);
+		c.poiseMaxScalePlayer = IniF("Poise", "MaxScalePlayer", 4.5f);
+		c.poiseMaxScaleNpc = IniF("Poise", "MaxScaleNPC", 9.0f);
 		c.npcTakenMult	= IniF("Poise", "NPCTakenMult", 2.5f);
 
 		c.postureEnabled	= IniI("Posture", "Enabled", 1);
@@ -272,14 +297,14 @@ namespace
 		c.postureRegenDelay	= IniF("Posture", "RegenDelaySeconds", 3.0f);
 		c.postureResetFraction = IniF("Posture", "ResetFraction", 0.0f);
 		c.postureLowHealthBonus = IniF("Posture", "LowHealthBonus", 1.0f);
-		c.postureScalePlayer = IniF("Posture", "ScalePlayer", 3.0f);
-		c.postureScaleNpc	= IniF("Posture", "ScaleNPC", 3.0f);
+		c.postureScalePlayer = IniF("Posture", "ScalePlayer", 5.0f);
+		c.postureScaleNpc	= IniF("Posture", "ScaleNPC", 5.0f);
 		c.bleedSeconds		= IniF("Posture", "BleedOutSeconds", 4.0f);
-		c.bleedExtraImmune	= IniF("Posture", "BleedOutImmuneSeconds", 3.0f);
+		c.bleedExtraImmune	= IniF("Posture", "BleedOutImmuneSeconds", 5.0f);
 
 		c.stamEnabled		= IniI("Stamina", "Enabled", 1);
 		c.swingCostPlayer	= IniF("Stamina", "SwingCostPlayer", 8.0f);
-		c.hitCostNpc		= IniF("Stamina", "HitCostNPC", 6.0f);
+		c.hitCostNpc		= IniF("Stamina", "HitCostNPC", 0.0f);
 
 		c.kbEnabled			= IniI("Knockback", "Enabled", 1);
 		c.kbForce			= IniF("Knockback", "Force", 1.0f);
@@ -287,10 +312,31 @@ namespace
 		c.kbOnPower			= IniI("Knockback", "OnPowerAttack", 1);
 		c.kbOnGiant			= IniI("Knockback", "OnGiantCreature", 1);
 		c.kbGiantMass		= IniF("Knockback", "GiantMassMin", 3.0f);
-		c.kbOnHeavyWeapon	= IniI("Knockback", "OnHeavyWeapon", 1);
+		c.kbOnHeavyWeapon	= IniI("Knockback", "OnHeavyWeapon", 0);
 		c.kbHeavyWeight		= IniF("Knockback", "HeavyWeaponMinWeight", 15.0f);
 
 		c.poiseWarnFraction	= IniF("TrueHUD", "PoiseWarnFraction", 0.3f);
+
+		c.parryEnabled		= IniI("Parry", "Enabled", 1);
+		c.parryWindowMs		= IniI("Parry", "WindowMs", 250);
+		c.parryAttackerPosture = IniF("Parry", "AttackerPostureFraction", 0.25f);
+		c.parryAttackerStagger = IniI("Parry", "AttackerStagger", 1);
+		c.parryDefPostureRecover = IniF("Parry", "DefenderPostureRecoverFraction", 0.15f);
+		c.parryDefPoiseRecover = IniF("Parry", "DefenderPoiseRecoverFraction", 0.25f);
+		c.parryFx			= IniI("Parry", "Effects", 1);
+
+		c.rageEnabled		= IniI("Rage", "Enabled", 1);
+		c.rageKey			= IniI("Rage", "Key", 34);
+		c.rageSeconds		= IniF("Rage", "DurationSeconds", 5.0f);
+		c.rageCooldown		= IniF("Rage", "CooldownSeconds", 30.0f);
+		c.rageCostType		= IniI("Rage", "CostType", 0);
+		c.rageCostPercent	= IniF("Rage", "CostPercent", 15.0f);
+		c.rageNpc			= IniI("Rage", "NPCs", 1);
+		c.rageNpcPosture	= IniF("Rage", "NPCPostureTrigger", 0.8f);
+		c.rageNpcPoise		= IniF("Rage", "NPCPoiseTrigger", 0.15f);
+		c.rageNpcChance		= IniI("Rage", "NPCChancePercent", 50);
+		c.rageNpcCooldown	= IniF("Rage", "NPCCooldownSeconds", 45.0f);
+		c.rageNpcCostPercent = IniF("Rage", "NPCCostPercent", 0.0f);
 		c.ignoreOwnSpells	= IniI("Diagnostics", "IgnoreOwnSpells", 1);
 
 		c.weightMult		= IniF("Damage", "WeightMult", 0.5f);
@@ -357,6 +403,8 @@ namespace
 		DWORD	bleedUntil;		// em BleedOut ate este momento (e imune ate bleedImmuneUntil)
 		DWORD	bleedImmuneUntil;
 		DWORD	lightUntil;		// proximo stagger leve permitido a partir daqui
+		DWORD	rageUntil;		// furia (imune) ate este momento
+		DWORD	rageReadyAt;	// proxima furia permitida a partir daqui
 	};
 	typedef std::map<UInt32, PoiseState> StateMap;
 
@@ -365,6 +413,8 @@ namespace
 	StateMap	g_states;
 
 	// contadores e estatisticas (diagnostico)
+	volatile DWORD	g_blockStart = 0;		// quando o jogador levantou o bloqueio (para o parry)
+	volatile LONG	g_parries = 0, g_rages = 0;
 	volatile LONG	g_postureBreaks = 0, g_lightSent = 0, g_mediumSent = 0;
 	volatile LONG	g_hits = 0, g_applied = 0, g_breaks = 0, g_sent = 0, g_acks = 0, g_faults = 0, g_scriptReady = 0;
 	volatile LONG	g_seq = 0;
@@ -426,7 +476,7 @@ namespace
 			}
 			PoiseState s;
 			s.cur = maxPoise; s.max = maxPoise; s.lastHit = 0; s.lastTick = now; s.immuneUntil = 0;
-			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0;
+			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0; s.rageUntil = 0; s.rageReadyAt = 0;
 			it = g_states.insert(std::make_pair(id, s)).first;
 		}
 		else
@@ -661,6 +711,32 @@ namespace
 		}
 	}
 
+	void AddAV(Actor * a, UInt32 av, float delta)
+	{
+		__try
+		{
+			const float cur = a->actorValueOwner.GetCurrent(av);
+			a->actorValueOwner.SetCurrent(av, cur + delta);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+		}
+	}
+
+	bool ReadAV(Actor * a, UInt32 av, float * cur, float * mx)
+	{
+		__try
+		{
+			*cur = a->actorValueOwner.GetCurrent(av);
+			*mx = a->actorValueOwner.GetMaximum(av);
+			return (*mx > 0.0f && *mx < 100000.0f && *cur >= -100000.0f);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
 	bool			g_stamBroken = false;
 	volatile LONG	g_stamHits = 0;
 
@@ -790,8 +866,8 @@ namespace
 		const DWORD latCount = g_latCount, latSum = g_latSum, latMax = g_latMax;
 		const size_t tracked = g_states.size();
 		Unlock();
-		_MESSAGE("SUMMARY: hits=%d applied=%d poiseBreaks=%d postureBreaks=%d light=%d medium=%d | events sent=%d acked=%d pending=%d | script started=%d | latency avg=%d ms max=%d ms (n=%d) | tracked=%d faults=%d | truehud=%s",
-			(int)g_hits, (int)g_applied, (int)g_breaks, (int)g_postureBreaks, (int)g_lightSent, (int)g_mediumSent, (int)g_sent, (int)g_acks, (int)(g_sent - g_acks), (int)g_scriptReady,
+		_MESSAGE("SUMMARY: hits=%d applied=%d poiseBreaks=%d postureBreaks=%d light=%d medium=%d parries=%d rages=%d | events sent=%d acked=%d pending=%d | script started=%d | latency avg=%d ms max=%d ms (n=%d) | tracked=%d faults=%d | truehud=%s",
+			(int)g_hits, (int)g_applied, (int)g_breaks, (int)g_postureBreaks, (int)g_lightSent, (int)g_mediumSent, (int)g_parries, (int)g_rages, (int)g_sent, (int)g_acks, (int)(g_sent - g_acks), (int)g_scriptReady,
 			latCount ? (int)(latSum / latCount) : 0, (int)latMax, (int)latCount, (int)tracked, (int)g_faults, g_hud ? "on" : "off");
 		if(g_sent > 0 && g_acks == 0)
 			_MESSAGE("WARNING: stagger events were sent but the Papyrus script never answered. The script is not running or the mod event was not registered (is NahIDWin.esp enabled? is the .pex installed?)");
@@ -858,6 +934,40 @@ namespace
 		return dmg;
 	}
 
+	// Parry: o atacante (NPC) ganha postura e, se nao estiver imune, leva stagger (ou BleedOut se a postura quebrar).
+	// Devolve o tipo de evento a enviar ao atacante (0 = nenhum).
+	int ParryAttacker(const HitInfo & h, DWORD now)
+	{
+		if(!h.attackerIsActor || !h.attackerActor || h.attacker.isPlayer || !h.attacker.alive) return 0;
+		const float mxA = ComputeMax(h.attacker);
+		const float mpA = ComputeMaxPosture(h.attacker);
+		int kind = g_cfg.parryAttackerStagger ? 2 : 0;
+		Lock();
+		{
+			PoiseState & st = FindOrCreate(h.attacker.id, mxA, mpA, now);
+			Regen(st, now);
+			RegenPosture(st, now);
+			const bool frozen = (now < st.bleedUntil) || (now < st.bleedImmuneUntil) || (now < st.rageUntil);
+			if(frozen) kind = 0;
+			else if(g_cfg.postureEnabled)
+			{
+				st.pCur += mpA * g_cfg.parryAttackerPosture;
+				st.pLastHit = now;
+				if(st.pCur >= st.pMax)
+				{
+					st.pCur = st.pMax * g_cfg.postureResetFraction;
+					st.cur = mxA;
+					st.bleedUntil = now + (DWORD)(g_cfg.bleedSeconds * 1000.0f);
+					st.bleedImmuneUntil = st.bleedUntil + (DWORD)(g_cfg.bleedExtraImmune * 1000.0f);
+					kind = 4;
+					InterlockedIncrement(&g_postureBreaks);
+				}
+			}
+		}
+		Unlock();
+		return kind;
+	}
+
 	void OnHit(TESHitEvent * evn)
 	{
 		if(!evn || !g_cfg.enabled) return;
@@ -878,7 +988,16 @@ namespace
 		const float dmg = PoiseDamage(h);	// dano "cheio" (sem bloqueio)
 		const bool blocked = (h.flags & TESHitEvent::kFlag_Blocked) != 0;
 		const bool heavyHit = (h.flags & (TESHitEvent::kFlag_PowerAttack | TESHitEvent::kFlag_Bash)) != 0;
-		const float poiseDmg = blocked ? dmg * g_cfg.blockedMult : dmg;
+
+		// parry: bloqueio nos primeiros instantes depois de levantar a guarda (so o jogador)
+		bool parry = false;
+		if(g_cfg.parryEnabled && blocked && h.victim.isPlayer)
+		{
+			const DWORD bs = g_blockStart;
+			if(bs && (now - bs) <= (DWORD)g_cfg.parryWindowMs) { parry = true; g_blockStart = 0; }
+		}
+
+		const float poiseDmg = parry ? 0.0f : (blocked ? dmg * g_cfg.blockedMult : dmg);
 		float lowHp = 1.0f;
 		if(h.victim.hpMax > 0.0f)
 		{
@@ -887,9 +1006,9 @@ namespace
 			if(frac > 1.0f) frac = 1.0f;
 			lowHp = 1.0f + g_cfg.postureLowHealthBonus * (1.0f - frac);
 		}
-		const float postureDmg = dmg * g_cfg.postureDamageMult * lowHp * (blocked ? g_cfg.postureBlockedMult : 1.0f);
+		const float postureDmg = parry ? 0.0f : dmg * g_cfg.postureDamageMult * lowHp * (blocked ? g_cfg.postureBlockedMult : 1.0f);
 
-		bool applied = false, poiseBroke = false, postureBroke = false, poiseWasImmune = false, bleeding = false;
+		bool applied = false, poiseBroke = false, postureBroke = false, poiseWasImmune = false, bleeding = false, raging = false, rageStarted = false;
 		float before = 0.0f, after = 0.0f, pBefore = 0.0f, pAfter = 0.0f;
 		int kind = 0;
 		Lock();
@@ -901,20 +1020,42 @@ namespace
 			pBefore = st.pCur;
 			bleeding = (now < st.bleedUntil) || (now < st.bleedImmuneUntil);
 			poiseWasImmune = (now < st.immuneUntil);
-			if(!bleeding)
+			raging = (now < st.rageUntil);
+
+			// furia automatica dos NPCs
+			if(!h.victim.isPlayer && g_cfg.rageEnabled && g_cfg.rageNpc && !bleeding && !poiseWasImmune && !raging && now >= st.rageReadyAt)
+			{
+				const float pf = (st.max > 0.0f) ? (st.cur / st.max) : 1.0f;
+				const float sf = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
+				if((sf >= g_cfg.rageNpcPosture || pf <= g_cfg.rageNpcPoise) && (rand() % 100) < g_cfg.rageNpcChance)
+				{
+					st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * 1000.0f);
+					st.rageReadyAt = now + (DWORD)(g_cfg.rageNpcCooldown * 1000.0f);
+					raging = true;
+					rageStarted = true;
+				}
+			}
+
+			const bool frozen = bleeding || poiseWasImmune || raging;
+			if(parry && !bleeding)
+			{
+				// parry perfeito: o defensor recupera
+				st.pCur -= mp * g_cfg.parryDefPostureRecover;
+				if(st.pCur < 0.0f) st.pCur = 0.0f;
+				st.cur += mx * g_cfg.parryDefPoiseRecover;
+				if(st.cur > mx) st.cur = mx;
+			}
+			if(!frozen)
 			{
 				applied = true;
 				st.lastHit = now;
 				st.pLastHit = now;
-				if(!poiseWasImmune)
+				st.cur -= poiseDmg;
+				if(st.cur <= 0.0f)
 				{
-					st.cur -= poiseDmg;
-					if(st.cur <= 0.0f)
-					{
-						poiseBroke = true;
-						st.cur = mx * g_cfg.resetFraction;
-						st.immuneUntil = now + (DWORD)(g_cfg.immuneSeconds * 1000.0f);
-					}
+					poiseBroke = true;
+					st.cur = mx * g_cfg.resetFraction;
+					st.immuneUntil = now + (DWORD)(g_cfg.immuneSeconds * 1000.0f);
 				}
 				if(g_cfg.postureEnabled)
 				{
@@ -932,11 +1073,11 @@ namespace
 				// que stagger? (a postura quebrada vence tudo; depois o poise quebrado; depois leve/medio)
 				if(postureBroke) kind = 4;
 				else if(poiseBroke) kind = 3;
-				else if(!blocked && !poiseWasImmune && g_cfg.lightEnabled && (h.victim.isPlayer ? g_cfg.lightPlayer : g_cfg.lightNpc))
+				else if(!blocked && g_cfg.lightEnabled && (h.victim.isPlayer ? g_cfg.lightPlayer : g_cfg.lightNpc))
 				{
 					if(heavyHit && g_cfg.mediumOnPower) kind = 2;
 					else if(now >= st.lightUntil) kind = 1;
-					if(kind) st.lightUntil = now + (DWORD)g_cfg.lightCooldownMs;
+					if(kind) st.lightUntil = now + (DWORD)(h.victim.isPlayer ? g_cfg.lightCooldownPlayerMs : g_cfg.lightCooldownMs);
 				}
 			}
 			after = st.cur;
@@ -958,7 +1099,7 @@ namespace
 		if(g_cfg.poiseWarnFraction > 0.0f && applied && !poiseBroke && mx > 0.0f &&
 			before / mx >= g_cfg.poiseWarnFraction && after / mx < g_cfg.poiseWarnFraction) HudFlash(h.victimRef);
 
-		// estamina do atacante NPC por golpe (o jogador paga por balanco, no script ponte)
+		// estamina do atacante NPC por golpe (desligado por omissao: deixa-se isso aos mods de estamina)
 		if(g_cfg.stamEnabled && g_cfg.hitCostNpc > 0.0f && !g_stamBroken && h.attackerActor && h.attackerIsActor &&
 			!h.attacker.isPlayer && h.attacker.alive && h.sourceKind != 2)
 		{
@@ -970,7 +1111,39 @@ namespace
 				g_stamBroken = true;
 				_MESSAGE("WARNING: writing the attacker's stamina does not work on this game (%s: %.1f -> %.1f). NPC stamina cost disabled.", ok ? "no effect" : "crashed (caught)", o, n);
 			}
-			else if(g_cfg.diag && g_stamHits <= 5) _MESSAGE("stamina: NPC %08X paid %.1f for a hit (%.1f -> %.1f)", h.attackerId, g_cfg.hitCostNpc, o, n);
+		}
+
+		if(rageStarted)
+		{
+			InterlockedIncrement(&g_rages);
+			_MESSAGE("RAGE (NPC): %08X is immune for %.1f s", h.victim.id, g_cfg.rageSeconds);
+			if(g_cfg.rageNpcCostPercent > 0.0f && h.victimRef)
+			{
+				float cur = 0.0f, m = 0.0f;
+				const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
+				Actor * va = (Actor *)h.victimRef;
+				if(ReadAV(va, av, &cur, &m))
+				{
+					float cost = m * g_cfg.rageNpcCostPercent / 100.0f;
+					if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;
+					if(cost > 0.0f) AddAV(va, av, -cost);
+				}
+			}
+			HudFlash(h.victimRef);
+		}
+
+		if(parry)
+		{
+			InterlockedIncrement(&g_parries);
+			_MESSAGE("PARRY: %08X parried %08X", h.victim.id, h.attackerId);
+			if(g_cfg.parryFx) SendStaggerEvent(h.victimRef, h.attackerId, 6);
+			const int ak = ParryAttacker(h, now);
+			if(ak && h.attackerActor)
+			{
+				if(g_cfg.staggerMode == 1 && ak != 4) NativeStagger((TESObjectREFR *)h.attackerActor);
+				else SendStaggerEvent((TESObjectREFR *)h.attackerActor, h.victim.id, ak);
+				if(ak == 4) _MESSAGE("POSTURE BREAK (by parry) -> BLEEDOUT: %08X", h.attacker.id);
+			}
 		}
 
 		if(applied) InterlockedIncrement(&g_applied);
@@ -982,10 +1155,10 @@ namespace
 		if(g_cfg.diag && g_cfg.logHitsMax > 0 && g_hitLogged < g_cfg.logHitsMax)
 		{
 			InterlockedIncrement(&g_hitLogged);
-			_MESSAGE("hit: victim=%08X%s attacker=%08X src=%08X(kind %d type %d w=%.1f stg=%.2f) flags=%X%s | vArmor=%.1f vHpMax=%.0f | dmg=%.1f | poise %.1f -> %.1f/%.1f | posture %.1f -> %.1f/%.1f | %s%s%s",
+			_MESSAGE("hit: victim=%08X%s attacker=%08X src=%08X(kind %d type %d w=%.1f stg=%.2f) flags=%X%s%s | vArmor=%.1f vHpMax=%.0f | dmg=%.1f | poise %.1f -> %.1f/%.1f | posture %.1f -> %.1f/%.1f | %s%s%s%s",
 				h.victim.id, h.victim.isPlayer ? "(player)" : "", h.attackerId, h.sourceId, h.sourceKind, h.weaponType, h.weaponWeight, h.weaponStagger,
-				h.flags, blocked ? " BLOCKED" : "", h.victim.armor, h.victim.hpMax, dmg, before, after, mx, pBefore, pAfter, mp,
-				bleeding ? "[bleedout/immune] " : "", poiseBroke ? "POISE-BREAK " : "", postureBroke ? "POSTURE-BREAK" : "");
+				h.flags, blocked ? " BLOCKED" : "", parry ? " PARRY" : "", h.victim.armor, h.victim.hpMax, dmg, before, after, mx, pBefore, pAfter, mp,
+				bleeding ? "[bleedout/immune] " : "", (raging && !bleeding) ? "[rage] " : "", poiseBroke ? "POISE-BREAK " : "", postureBroke ? "POSTURE-BREAK" : "");
 		}
 
 		if(kind)
@@ -1054,6 +1227,63 @@ namespace
 		return g_cfg.kbForce;
 	}
 
+	SInt32 N_GetRageKey(StaticFunctionTag *)
+	{
+		return g_cfg.rageEnabled ? g_cfg.rageKey : 0;
+	}
+
+	SInt32 N_GetRageCostType(StaticFunctionTag *)
+	{
+		return g_cfg.rageCostType;
+	}
+
+	void N_BlockStart(StaticFunctionTag *)
+	{
+		g_blockStart = GetTickCount();
+	}
+
+	// O jogador carregou na tecla da furia. Devolve -1 se nao pode (recarga, BleedOut...) ou o custo a pagar (>= 0).
+	float N_TryRage(StaticFunctionTag *)
+	{
+		if(!g_cfg.enabled || !g_cfg.rageEnabled) return -1.0f;
+		PlayerCharacter * p = Engine::Player();
+		if(!p) return -1.0f;
+		ActorStats s;
+		if(!ReadActorStats((Actor *)p, &s)) return -1.0f;
+		const DWORD now = GetTickCount();
+		bool ok = false;
+		DWORD left = 0;
+		Lock();
+		{
+			PoiseState & st = FindOrCreate(s.id, ComputeMax(s), ComputeMaxPosture(s), now);
+			if(now >= st.rageReadyAt && now >= st.bleedUntil && now >= st.rageUntil)
+			{
+				st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * 1000.0f);
+				st.rageReadyAt = now + (DWORD)(g_cfg.rageCooldown * 1000.0f);
+				ok = true;
+			}
+			else if(st.rageReadyAt > now) left = st.rageReadyAt - now;
+		}
+		Unlock();
+		if(!ok)
+		{
+			if(g_cfg.diag) _MESSAGE("RAGE (player): refused (cooldown %.1f s left or in bleedout)", left / 1000.0f);
+			return -1.0f;
+		}
+		InterlockedIncrement(&g_rages);
+		float cost = 0.0f, cur = 0.0f, m = 0.0f;
+		const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
+		if(ReadAV((Actor *)p, av, &cur, &m))
+		{
+			cost = m * g_cfg.rageCostPercent / 100.0f;
+			if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
+			if(cost < 0.0f) cost = 0.0f;
+		}
+		_MESSAGE("RAGE (player): immune for %.1f s, cost %.1f %s", g_cfg.rageSeconds, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
+		HudFlash((TESObjectREFR *)p);
+		return cost;
+	}
+
 	void N_BleedDone(StaticFunctionTag *, SInt32 packed)
 	{
 		if(g_cfg.diag) _MESSAGE("papyrus: bleedout #%d finished (the victim should be standing again)", (int)((packed >> 3) & 0x1FFFFF));
@@ -1062,6 +1292,10 @@ namespace
 	bool RegisterPapyrus(VMClassRegistry * registry)
 	{
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetBleedSeconds", "NahIDWinNative", N_GetBleedSeconds, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("GetRageKey", "NahIDWinNative", N_GetRageKey, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("GetRageCostType", "NahIDWinNative", N_GetRageCostType, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("BlockStart", "NahIDWinNative", N_BlockStart, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("TryRage", "NahIDWinNative", N_TryRage, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetSwingCost", "NahIDWinNative", N_GetSwingCost, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetKnockbackForce", "NahIDWinNative", N_GetKnockbackForce, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("BleedDone", "NahIDWinNative", N_BleedDone, registry));
