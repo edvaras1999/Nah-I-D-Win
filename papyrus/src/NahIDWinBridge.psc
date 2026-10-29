@@ -51,7 +51,7 @@ Function ApplyRegen()
 EndFunction
 
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
-; Event OnAnimationEvent(ObjectReference akSource, string asEventName)
+Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
 	int mode = 0
 	if asEventName == "bashStart" || asEventName == "bashPowerStart"
