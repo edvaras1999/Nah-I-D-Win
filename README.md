@@ -6,7 +6,9 @@
 - **Postura** (barra lenta, estilo Sekiro): cada golpe enche-a, ela baixa sozinha. Encheu por completo: **BleedOut** (ajoelhado e indefeso).
 - Golpes bloqueados enchem as duas barras so um pouco e nao dao stagger. A dificuldade da postura esta no `.ini` (`[Posture] Difficulty`).
 
-Estado: **v0.5.0** (ainda nao testado no jogo). Novo na 0.5.0: menu MCM (SkyUI), custo de estamina por tipo de arma/golpe/armadura (a armadura abranda a regeneracao), exaustao (estamina a zero), parry sem dano, limpeza do estado ao carregar, segunda barra experimental. Antes (0.4.0): parry proprio (faiscas e sons do Inpa Sekiro se instalado), furia (imunidade em troca de vida/estamina, tecla G; NPCs ativam sozinhos). Antes: estamina por balanco (jogador) e por golpe (NPCs), empurrao no stagger pesado em condicoes especificas, barra de risco no TrueHUD. Ainda por fazer: bloqueio perfeito (Inpa Sekiro), dano extra durante o BleedOut, MCM, segunda barra propria.
+Estado: **v0.6.0** (ainda nao testado no jogo). Novo na 0.6.0, quase tudo na DLL (sem Papyrus): dano de vida controlado por hook (parry = dano zero, furia = reducao de dano e estamina gratis, bonus de dano em BleedOut), dificuldade propria por GMST, parry pela tecla de bloqueio lida na DLL, barra do TrueHUD = postura + linhas proprias de poise e furia (jogador e, experimental, inimigos), diagnostico de eventos do jogador (para a queda a meio dos combos), MCM com 3 abas e dois idiomas (English / Portugues BR).
+
+**Imagens do menu**: nao fazem parte do repositorio (sao arte do utilizador). Instala-as a parte: pasta `Data/Interface/exported/nahidwin1-3.dds`.
 
 ## Como compilar (tudo no GitHub)
 1. Cria um repositorio novo e envia estes arquivos mantendo as pastas.

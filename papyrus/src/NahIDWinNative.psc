@@ -18,15 +18,6 @@ Function BleedDone(int packed) global native
 float Function GetSwingCost(int mode, int rightType) global native
 float Function GetKnockbackForce() global native
 
-; Furia: tecla do jogador (0 = desligada), tipo de custo (0 vida, 1 estamina), pedido de ativacao.
-; TryRage devolve -1 se nao pode (recarga ou BleedOut) ou o custo a pagar (>= 0).
-int Function GetRageKey() global native
-int Function GetRageCostType() global native
-float Function TryRage() global native
-
-; Chamada quando o jogador levanta o bloqueio: abre a janela do parry.
-Function BlockStart() global native
-
 ; Armadura abranda a regeneracao de estamina: percentagem (100 = normal). Devolve -1 se estiver desligado (nao mexer).
 float Function GetRegenPercent() global native
 
@@ -34,11 +25,9 @@ float Function GetRegenPercent() global native
 float Function GetExhaustSeconds() global native
 bool Function TryExhaust() global native
 
-; Vida a devolver depois de um parry sem dano.
-float Function GetParryRefund() global native
-
-; Tempo de recarga da furia em segundos (para o aviso "furia pronta").
-float Function GetRageCooldown() global native
+; Escreve uma linha no NahIDWin.log (diagnostico) e le o idioma do menu (0 English, 1 Portugues).
+Function Log(string msg) global native
+int Function GetLanguage() global native
 
 ; Ler e escrever o NahIDWin.ini (usado pelo menu MCM).
 float Function IniGetF(string section, string key, float defaultValue) global native

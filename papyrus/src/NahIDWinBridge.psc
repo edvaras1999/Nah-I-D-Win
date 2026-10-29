@@ -4,9 +4,9 @@ Scriptname NahIDWinBridge extends Quest
    tipo 1,2,3 = stagger leve / medio / pesado  -> lanca um de tres feiticos de stagger do jogo
    tipo 4     = BleedOut (a postura quebrou)   -> toca a animacao de ajoelhado durante alguns segundos
    tipo 5     = stagger pesado + empurrao (golpe forte, criatura gigante)
-   tipo 6     = parry perfeito do jogador      -> faiscas e som (os do Inpa Sekiro, se estiver instalado) e vida devolvida
+   tipo 6     = parry perfeito do jogador      -> faiscas e som (os do Inpa Sekiro, se estiver instalado)
    tipo 7     = exaustao (estamina a zero)     -> jogador: sem atacar e sem regenerar por uns segundos; NPC: stagger pesado
-  O jogador tambem usa eventos de animacao (um por balanco, golpe forte, bloqueio) e uma tecla (furia).
+  O jogador tambem usa eventos de animacao (um por balanco, golpe forte). Parry, furia e dano de vida sao feitos na DLL.
   Nao ha ciclos nem consultas repetidas. }
 
 Spell sp1
@@ -30,7 +30,6 @@ Function RegisterInputs()
 	if pl
 		RegisterForAnimationEvent(pl, "weaponSwing")
 		RegisterForAnimationEvent(pl, "weaponLeftSwing")
-		RegisterForAnimationEvent(pl, "blockStart")
 		RegisterForAnimationEvent(pl, "bashStart")
 		RegisterForAnimationEvent(pl, "bashPowerStart")
 		RegisterForAnimationEvent(pl, "attackPowerStartInPlace")
@@ -40,11 +39,6 @@ Function RegisterInputs()
 		RegisterForAnimationEvent(pl, "attackPowerStartRight")
 		RegisterForAnimationEvent(pl, "attackPowerStartDualWield")
 		ApplyRegen()
-	endif
-	UnregisterForAllKeys()
-	int key = NahIDWinNative.GetRageKey()
-	if key > 0
-		RegisterForKey(key)
 	endif
 EndFunction
 
@@ -57,12 +51,7 @@ Function ApplyRegen()
 EndFunction
 
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
-; Levantar o bloqueio abre a janela do parry.
-Event OnAnimationEvent(ObjectReference akSource, string asEventName)
-	if asEventName == "blockStart"
-		NahIDWinNative.BlockStart()
-		return
-	endif
+; Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
 	int mode = 0
 	if asEventName == "bashStart" || asEventName == "bashPowerStart"
@@ -93,7 +82,12 @@ Function DoExhaustPlayer()
 	float savedRate = pl.GetActorValue("StaminaRateMult")
 	pl.SetActorValue("StaminaRateMult", 0.0)
 	Game.DisablePlayerControls(false, true, false, false, false, false, false, false, 0)
-	Debug.Notification("NAH-I-D-WIN: EXAUSTO!")
+	NahIDWinNative.Log("exhaust player start " + secs)
+	if NahIDWinNative.GetLanguage() == 1
+		Debug.Notification("NAH-I-D-WIN: EXAUSTO!")
+	else
+		Debug.Notification("NAH-I-D-WIN: EXHAUSTED!")
+	endif
 	Utility.Wait(secs)
 	Game.EnablePlayerControls(false, true, false, false, false, false, false, false, 0)
 	float r = NahIDWinNative.GetRegenPercent()
@@ -103,35 +97,6 @@ Function DoExhaustPlayer()
 		pl.SetActorValue("StaminaRateMult", savedRate)
 	endif
 EndFunction
-
-; Passou o tempo de recarga da furia.
-Event OnUpdate()
-	Debug.Notification("NAH-I-D-WIN: furia pronta")
-EndEvent
-
-; Tecla da furia: imunidade temporaria em troca de vida ou estamina.
-Event OnKeyDown(int keyCode)
-	if Utility.IsInMenuMode()
-		return
-	endif
-	if keyCode != NahIDWinNative.GetRageKey()
-		return
-	endif
-	float cost = NahIDWinNative.TryRage()
-	if cost < 0.0
-		Debug.Notification("NAH-I-D-WIN: furia indisponivel (em recarga)")
-		return
-	endif
-	if cost > 0.0
-		if NahIDWinNative.GetRageCostType() == 0
-			Game.GetPlayer().DamageActorValue("Health", cost)
-		else
-			Game.GetPlayer().DamageActorValue("Stamina", cost)
-		endif
-	endif
-	Debug.Notification("NAH-I-D-WIN: FURIA!")
-	RegisterForSingleUpdate(NahIDWinNative.GetRageCooldown())
-EndEvent
 
 ; sender = a vitima. numArg = sequencia * 8 + tipo (1..6). strArg = form id do agressor (decimal, pode ser negativo).
 Function OnNahStagger(string eventName, string strArg, float numArg, Form sender)
@@ -145,10 +110,6 @@ Function OnNahStagger(string eventName, string strArg, float numArg, Form sender
 		endif
 		if kind == 6
 			DoParryFX(victim)
-			float back = NahIDWinNative.GetParryRefund()
-			if back > 0.0
-				victim.RestoreActorValue("Health", back)
-			endif
 			NahIDWinNative.Ack(packed)
 			return
 		endif
@@ -220,6 +181,7 @@ Function DoBleedOut(Actor victim, int packed)
 	if isPlayer
 		Game.DisablePlayerControls(true, true, false, false, false, true, true, false, 0)
 	endif
+	NahIDWinNative.Log("bleedout start " + secs)
 	Debug.SendAnimationEvent(victim, "BleedoutStart")
 	Utility.Wait(secs)
 	if !victim.IsDead()

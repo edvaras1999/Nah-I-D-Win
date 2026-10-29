@@ -18,7 +18,13 @@
 // confirmacoes do script (e o atraso), e despeja os primeiros bytes das funcoes do jogo que precisamos
 // de identificar para a versao sem Papyrus.
 //
-// Barra visivel: usa a API do TrueHUD LE (barras especiais), se o TrueHUD estiver instalado.
+// v0.6.0: o que e possivel faz-se na DLL, sem Papyrus:
+//   - Dano de vida (hook em Actor::HandleHealthDamage, assinatura verificada): parry = dano zero, furia = reducao,
+//     BleedOut = bonus de dano. Dificuldade propria por GMST (fDiffMult*), sem contas de devolucao de vida.
+//   - Parry: tecla de bloqueio lida na DLL (receptor de input), janela configuravel.
+//   - Furia: tecla G, imunidade a stagger, reducao de dano, sem custo de estamina durante a furia.
+//   - Barras: TrueHUD = Postura; linhas proprias de Poise e Furia no jogador e (experimental) por baixo dos inimigos.
+// O Papyrus fica so com o stagger (feiticos), BleedOut, FX do parry e exaustao.
 //
 // Licenca GPL-3.0. A base de compilacao e os enderecos vem do FreeClimb LE / SoftTarget LE (GPL-3.0).
 
@@ -30,6 +36,10 @@
 #include "skse/GameReferences.h"
 #include "skse/GameEvents.h"
 #include "skse/GameMenus.h"
+#include "skse/GameInput.h"
+#include "skse/GameSettings.h"
+#include "skse/NiTypes.h"
+#include "skse/NiObjects.h"
 #include "skse/ScaleformMovie.h"
 #include "skse/PapyrusVM.h"
 #include "skse/PapyrusNativeFunctions.h"
@@ -45,7 +55,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.5.0 (Poise + Postura + BleedOut + parry + furia + estamina + MCM)"
+#define PLUGIN_VERSION_STR	"0.6.0 (Poise + Postura + BleedOut + parry nativo + furia + dano de vida + estamina + MCM)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -206,7 +216,8 @@ namespace
 		float	parryDefPostureRecover;	// fracao da postura maxima que o defensor recupera
 		float	parryDefPoiseRecover;	// fracao do poise maximo que o defensor recupera
 		int		parryFx;				// faiscas e som (usa os do Inpa Sekiro se instalado)
-		int		parryNoDamage;			// devolve a vida perdida no golpe aparado
+		int		parryNoDamage;			// 1 = o golpe aparado nao causa dano de vida (intercetado na funcao de dano do motor)
+		int		parryCooldownMs;		// minimo entre duas janelas de parry (evita carregar sem parar)
 
 		// furia: imunidade temporaria em troca de vida ou estamina
 		int		rageEnabled;
@@ -215,6 +226,9 @@ namespace
 		float	rageCooldown;
 		int		rageCostType;			// 0 = vida, 1 = estamina
 		float	rageCostPercent;		// percentagem do maximo
+		float	rageDamageReduction;	// % do dano de vida que o jogador deixa de levar durante a furia
+		float	rageNpcDamageReduction;	// idem para NPCs
+		int		rageZeroStamina;		// a estamina do jogador nao desce durante a furia
 		int		rageNpc;				// NPCs ativam sozinhos
 		float	rageNpcPosture;			// ativa quando a postura passa desta fracao
 		float	rageNpcPoise;			// ... ou o poise desce abaixo desta fracao
@@ -224,6 +238,18 @@ namespace
 
 		int		bar2Enabled;			// EXPERIMENTAL: segunda barra desenhada por codigo (so para o jogador)
 		float	bar2X, bar2Y, bar2W, bar2H;
+		int		barPoise;				// mostrar a linha do poise
+		int		barRage;				// mostrar a linha da furia
+		int		enemyBars;				// EXPERIMENTAL: as mesmas linhas por baixo dos inimigos
+		float	enemyBarW, enemyBarH, enemyBarOffsetY;
+		int		enemyBarMax;			// quantas barras de inimigos no maximo
+		int		language;				// 0 = ingles, 1 = portugues (texto do MCM e avisos)
+
+		// vida (estilo Sekiro): o dano de vida nao depende da dificuldade do jogo
+		int		healthEnabled;
+		float	healthTaken;			// o jogador leva isto vezes o dano base (em todas as dificuldades)
+		float	healthDealt;			// o jogador causa isto vezes o dano base
+		float	bleedDamageMult;		// dano extra que um alvo em BleedOut leva (1.0 = igual)
 
 		float	poiseWarnFraction;		// a barra pisca quando o poise desce abaixo disto (0 = desligado)
 		int		ignoreOwnSpells;		// 1 = nao contar os feiticos de stagger deste mod como dano
@@ -238,6 +264,7 @@ namespace
 		int		logHitsMax;			// quantos golpes escrever no log por sessao (0 = nenhum)
 		int		summarySec;			// de quantos em quantos segundos escrever o resumo (0 = nunca)
 		int		dumpVtable;			// 1 = despejar a tabela de funcoes de animacao do jogador
+		int		logPlayerEvents;	// 1 = registar tudo o que faz o jogador cair ou cambalear
 	};
 	Config g_cfg;
 
@@ -273,6 +300,8 @@ namespace
 		GetPrivateProfileStringA(section, key, "", buf, sizeof(buf), g_iniPath);
 		return buf[0] ? atoi(buf) : def;
 	}
+
+	void ApplyHealthGMST();
 
 	void LoadConfig()
 	{
@@ -353,13 +382,14 @@ namespace
 		c.poiseWarnFraction	= IniF("TrueHUD", "PoiseWarnFraction", 0.3f);
 
 		c.parryEnabled		= IniI("Parry", "Enabled", 1);
-		c.parryWindowMs		= IniI("Parry", "WindowMs", 250);
+		c.parryWindowMs		= IniI("Parry", "WindowMs", 350);
 		c.parryAttackerPosture = IniF("Parry", "AttackerPostureFraction", 0.25f);
 		c.parryAttackerStagger = IniI("Parry", "AttackerStagger", 1);
 		c.parryDefPostureRecover = IniF("Parry", "DefenderPostureRecoverFraction", 0.15f);
 		c.parryDefPoiseRecover = IniF("Parry", "DefenderPoiseRecoverFraction", 0.25f);
 		c.parryFx			= IniI("Parry", "Effects", 1);
 		c.parryNoDamage		= IniI("Parry", "NoDamage", 1);
+		c.parryCooldownMs	= IniI("Parry", "CooldownMs", 600);
 
 		c.rageEnabled		= IniI("Rage", "Enabled", 1);
 		c.rageKey			= IniI("Rage", "Key", 34);
@@ -367,6 +397,9 @@ namespace
 		c.rageCooldown		= IniF("Rage", "CooldownSeconds", 30.0f);
 		c.rageCostType		= IniI("Rage", "CostType", 0);
 		c.rageCostPercent	= IniF("Rage", "CostPercent", 15.0f);
+		c.rageDamageReduction = IniF("Rage", "DamageReductionPercent", 70.0f);
+		c.rageNpcDamageReduction = IniF("Rage", "NPCDamageReductionPercent", 50.0f);
+		c.rageZeroStamina	= IniI("Rage", "ZeroStamina", 1);
 		c.rageNpc			= IniI("Rage", "NPCs", 1);
 		c.rageNpcPosture	= IniF("Rage", "NPCPostureTrigger", 0.8f);
 		c.rageNpcPoise		= IniF("Rage", "NPCPoiseTrigger", 0.15f);
@@ -397,8 +430,20 @@ namespace
 		c.hudEnabled	= IniI("TrueHUD", "Enabled", 1);
 		c.hudPlayer		= IniI("TrueHUD", "ShowForPlayer", 1);
 		c.hudFlash		= IniI("TrueHUD", "FlashOnBreak", 1);
-		c.hudBar		= IniI("TrueHUD", "Bar", 2);
-		c.bar2Enabled	= IniI("TrueHUD", "SecondBar", 0);
+		c.hudBar		= IniI("TrueHUD", "Bar", 1);
+		c.bar2Enabled	= IniI("TrueHUD", "SecondBar", 1);
+		c.barPoise		= IniI("TrueHUD", "BarPoise", 1);
+		c.barRage		= IniI("TrueHUD", "BarRage", 1);
+		c.enemyBars		= IniI("TrueHUD", "EnemyBars", 1);
+		c.enemyBarW		= IniF("TrueHUD", "EnemyBarWidth", 110.0f);
+		c.enemyBarH		= IniF("TrueHUD", "EnemyBarHeight", 4.0f);
+		c.enemyBarOffsetY = IniF("TrueHUD", "EnemyBarOffsetY", 14.0f);
+		c.enemyBarMax	= IniI("TrueHUD", "EnemyBarMax", 8);
+		c.language		= IniI("Menu", "Language", 0);
+		c.healthEnabled	= IniI("Health", "Enabled", 1);
+		c.healthTaken	= IniF("Health", "TakenMult", 1.0f);
+		c.healthDealt	= IniF("Health", "DealtMult", 1.0f);
+		c.bleedDamageMult = IniF("Health", "BleedOutDamageMult", 1.0f);
 		c.bar2X			= IniF("TrueHUD", "SecondBarX", 490.0f);
 		c.bar2Y			= IniF("TrueHUD", "SecondBarY", 640.0f);
 		c.bar2W			= IniF("TrueHUD", "SecondBarWidth", 300.0f);
@@ -407,13 +452,15 @@ namespace
 		c.diag			= IniI("Diagnostics", "Enabled", 1);
 		c.logHitsMax	= IniI("Diagnostics", "LogHitsMax", 400);
 		c.summarySec	= IniI("Diagnostics", "SummarySeconds", 30);
-		c.dumpVtable	= IniI("Diagnostics", "DumpVtable", 1);
+		c.dumpVtable	= IniI("Diagnostics", "DumpVtable", 0);
+		c.logPlayerEvents = IniI("Diagnostics", "LogPlayerEvents", 1);
 
 		WIN32_FILE_ATTRIBUTE_DATA fad;
 		if(GetFileAttributesExA(g_iniPath, GetFileExInfoStandard, &fad)) g_iniTime = fad.ftLastWriteTime;
 
 		_MESSAGE("config: enabled=%d player=%d npcs=%d staggerMode=%d (slot %d, '%s') posture=%d (difficulty %.2f) hud=%d bar=%d diag=%d  [%s]",
 			c.enabled, c.applyPlayer, c.applyNPCs, c.staggerMode, c.nativeSlot, c.nativeEvent, c.postureEnabled, c.postureDifficulty, c.hudEnabled, c.hudBar, c.diag, g_iniPath);
+		ApplyHealthGMST();
 	}
 
 	void MaybeReloadConfig(DWORD now)
@@ -456,10 +503,13 @@ namespace
 
 	// contadores e estatisticas (diagnostico)
 	volatile DWORD	g_powerUntil = 0;		// um golpe forte esta a comecar (o balanco seguinte nao paga duas vezes)
-	float			g_hpAtBlock = 0.0f;		// vida do jogador quando levantou o bloqueio
-	volatile LONG	g_refundPending = 0;
-	volatile DWORD	g_blockStart = 0;		// quando o jogador levantou o bloqueio (para o parry)
+
+
 	volatile LONG	g_parries = 0, g_rages = 0;
+	volatile DWORD	g_parryUntil = 0;		// janela do parry: o jogador carregou no bloqueio ha pouco
+	volatile DWORD	g_parryZeroUntil = 0;	// depois de um parry, o dano ainda e anulado durante um instante
+	volatile DWORD	g_parryLast = 0;
+	volatile LONG	g_hdCalls = 0, g_hdParryZero = 0, g_hdRage = 0, g_hdBleed = 0, g_hdLogged = 0;
 	volatile LONG	g_postureBreaks = 0, g_lightSent = 0, g_mediumSent = 0;
 	volatile LONG	g_hits = 0, g_applied = 0, g_breaks = 0, g_sent = 0, g_acks = 0, g_faults = 0, g_scriptReady = 0;
 	volatile LONG	g_seq = 0;
@@ -756,12 +806,15 @@ namespace
 		}
 	}
 
-	void AddAV(Actor * a, UInt32 av, float delta)
+	// Restaura (delta > 0) ou ataca (delta < 0) um valor de ator pelo caminho do proprio jogo
+	// (ActorValueOwner posicao 6, modificador 2 = dano), o mesmo que o Papyrus DamageActorValue / RestoreActorValue.
+	void RestoreAV(Actor * a, UInt32 av, float delta)
 	{
 		__try
 		{
-			const float cur = a->actorValueOwner.GetCurrent(av);
-			a->actorValueOwner.SetCurrent(av, cur + delta);
+			UInt32 bits;
+			memcpy(&bits, &delta, sizeof(bits));
+			a->actorValueOwner.Unk_06(2, av, bits);
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -783,6 +836,7 @@ namespace
 	}
 
 	bool			g_stamBroken = false;
+	bool			g_dataLoaded = false;
 	volatile LONG	g_stamHits = 0;
 
 	// ------------------------------------------------------------------ TrueHUD
@@ -797,7 +851,28 @@ namespace
 		return (g_cfg.hudBar == 1) ? ComputeMaxPosture(s) : ComputeMax(s);
 	}
 
-	// ---- segunda barra (EXPERIMENTAL): desenhada por codigo no HUD do jogo, so para o jogador.
+	// ---- barras extra: poise + furia, desenhadas por codigo no HUD do jogo (jogador e, em teste, inimigos).
+	// A barra especial do TrueHUD mostra a postura; estas duas linhas ficam por baixo.
+	struct BarRect { float x, y, w, h; int color; int alpha; };
+	struct BarInfo
+	{
+		float	poise;			// fracao que resta (0..1)
+		int		rageState;		// 0 pronta, 1 em recarga, 2 ativa
+		float	rageFrac;		// ativa: o que resta; em recarga: o que ja recarregou
+		bool	warn;			// poise perto de quebrar
+	};
+	struct EnemyBar
+	{
+		float	wx, wy, wz;		// posicao da cabeca no mundo
+		BarInfo	info;
+		DWORD	tick;
+	};
+	typedef std::map<UInt32, EnemyBar> EnemyBarMap;
+	EnemyBarMap		g_enemyBars;			// protegido pelo lock principal
+	BarInfo			g_playerBar = { 1.0f, 0, 1.0f, false };
+	bool			g_playerBarValid = false;
+	DWORD			g_rageFlashUntil = 0;
+	int				g_prevPlayerRageState = -1;
 	GFxMovieView *	g_bar2View = NULL;
 	DWORD			g_bar2Tick = 0;
 	bool			g_bar2Dead = false;
@@ -811,36 +886,23 @@ namespace
 		return menu ? menu->view : NULL;
 	}
 
-	// Sem objetos com destrutor: pode usar __try. Desenha: fundo, poise (o que resta) e postura (o que encheu).
-	bool InvokeDrawBars(GFxMovieView * v, bool init, float x, float y, float w, float h, float poiseFrac, float postureFrac)
+	// Sem objetos com destrutor: pode usar __try. Desenha os retangulos (fundo e valor) de uma vez.
+	bool InvokeDrawRects(GFxMovieView * v, bool init, const BarRect * r, int n)
 	{
 		__try
 		{
 			if(init) v->Invoke("_root.createEmptyMovieClip", NULL, "%s%d", "nahBar", 9500);
 			v->Invoke("_root.nahBar.clear", NULL, "");
-			const float gap = 3.0f;
-			for(int bar = 0; bar < 2; bar++)
+			for(int i = 0; i < n; i++)
 			{
-				const float yy = y + bar * (h + gap);
-				const float frac = (bar == 0) ? poiseFrac : postureFrac;
-				const int color = (bar == 0) ? 0x4FA3FF : 0xFF5040;
-				// fundo
-				v->Invoke("_root.nahBar.beginFill", NULL, "%d%d", 0x000000, 60);
-				v->Invoke("_root.nahBar.moveTo", NULL, "%f%f", x, yy);
-				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x + w, yy);
-				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x + w, yy + h);
-				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x, yy + h);
+				const BarRect & b = r[i];
+				if(!(b.w > 0.0f) || !(b.h > 0.0f)) continue;
+				v->Invoke("_root.nahBar.beginFill", NULL, "%d%d", b.color, b.alpha);
+				v->Invoke("_root.nahBar.moveTo", NULL, "%f%f", b.x, b.y);
+				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", b.x + b.w, b.y);
+				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", b.x + b.w, b.y + b.h);
+				v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", b.x, b.y + b.h);
 				v->Invoke("_root.nahBar.endFill", NULL, "");
-				// valor
-				if(frac > 0.0f)
-				{
-					v->Invoke("_root.nahBar.beginFill", NULL, "%d%d", color, 90);
-					v->Invoke("_root.nahBar.moveTo", NULL, "%f%f", x, yy);
-					v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x + w * frac, yy);
-					v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x + w * frac, yy + h);
-					v->Invoke("_root.nahBar.lineTo", NULL, "%f%f", x, yy + h);
-					v->Invoke("_root.nahBar.endFill", NULL, "");
-				}
 			}
 			return true;
 		}
@@ -850,29 +912,195 @@ namespace
 		}
 	}
 
-	void DrawSecondBar(float poiseFrac, float postureFrac)
+	bool GetVisibleRect(GFxMovieView * v, float * l, float * t, float * r, float * b)
+	{
+		__try
+		{
+			GRectF rc = v->GetVisibleFrameRect();
+			*l = rc.left; *t = rc.top; *r = rc.right; *b = rc.bottom;
+			return (*r > *l) && (*b > *t);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	// Posicao da cabeca de um ator (no mundo). Mesmo caminho que o TrueHUD LE usa (gestor de processo -> no da cabeca).
+	bool ReadHeadPos(Actor * a, float * x, float * y, float * z)
+	{
+		__try
+		{
+			float px = a->pos.x, py = a->pos.y, pz = a->pos.z + 110.0f;
+			void * pm = a->processManager;
+			if(pm)
+			{
+				void * middle = *(void **)((UInt8 *)pm + 4);
+				if(middle)
+				{
+					NiAVObject * head = *(NiAVObject **)((UInt8 *)middle + 0xB8);
+					if(head)
+					{
+						px = head->m_worldTransform.pos.x;
+						py = head->m_worldTransform.pos.y;
+						pz = head->m_worldTransform.pos.z;
+					}
+				}
+			}
+			if(!(px > -1.0e8f && px < 1.0e8f && py > -1.0e8f && py < 1.0e8f && pz > -1.0e8f && pz < 1.0e8f)) return false;
+			*x = px; *y = py; *z = pz;
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	// Mundo -> ecra (0..1). Funcao e matrizes da LE 1.9.32.0, as mesmas que o TrueHUD LE usa.
+	bool ProjectPoint(float wx, float wy, float wz, float * sx, float * sy)
+	{
+		__try
+		{
+			typedef bool (__cdecl * ProjFn)(const float *, const NiRect<float> *, const NiPoint3 *, float *, float *, float *, float);
+			NiPoint3 p;
+			p.x = wx; p.y = wy; p.z = wz;
+			float x = 0.0f, y = 0.0f, d = 0.0f;
+			const bool r = ((ProjFn)0x00AB84C0)((const float *)0x01B3EA10, (const NiRect<float> *)0x01B3EA74, &p, &x, &y, &d, 1e-5f);
+			if(!r || !(x > -2.0f && x < 3.0f && y > -2.0f && y < 3.0f)) return false;
+			*sx = x; *sy = y;
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	// Chamar com o lock tomado.
+	void RageDisplay(const PoiseState & st, DWORD now, bool npc, int * state, float * frac)
+	{
+		float f = 1.0f;
+		if(now < st.rageUntil)
+		{
+			const float total = g_cfg.rageSeconds * 1000.0f;
+			*state = 2;
+			f = (total > 1.0f) ? (float)(st.rageUntil - now) / total : 0.0f;
+		}
+		else if(now < st.rageReadyAt)
+		{
+			const float total = (npc ? g_cfg.rageNpcCooldown : g_cfg.rageCooldown) * 1000.0f;
+			*state = 1;
+			f = (total > 1.0f) ? 1.0f - (float)(st.rageReadyAt - now) / total : 1.0f;
+		}
+		else *state = 0;
+		if(f < 0.0f) f = 0.0f;
+		if(f > 1.0f) f = 1.0f;
+		*frac = f;
+	}
+
+	int AppendBarRects(BarRect * out, int n, int cap, float x, float y, float w, float h, const BarInfo & b, bool showRageRow, DWORD now)
+	{
+		const float gap = 3.0f;
+		float yy = y;
+		if(g_cfg.barPoise && n + 2 <= cap)
+		{
+			BarRect bg = { x, yy, w, h, 0x000000, 60 };
+			out[n++] = bg;
+			BarRect fl = { x, yy, w * b.poise, h, b.warn ? 0xFF6040 : 0x4FA3FF, 90 };
+			out[n++] = fl;
+			yy += h + gap;
+		}
+		if(g_cfg.barRage && g_cfg.rageEnabled && showRageRow && n + 2 <= cap)
+		{
+			BarRect bg = { x, yy, w, h, 0x000000, 60 };
+			out[n++] = bg;
+			int color, alpha;
+			float frac = b.rageFrac;
+			if(b.rageState == 2) { color = 0xFFC83C; alpha = 95; }
+			else if(b.rageState == 1) { color = 0x7A6A48; alpha = 70; }
+			else
+			{
+				// pronta: dourada; pisca durante um instante quando acaba de ficar pronta
+				frac = 1.0f;
+				if(now < g_rageFlashUntil) { color = 0xFFFFFF; alpha = ((now / 150) & 1) ? 100 : 45; }
+				else { color = 0xE8B84A; alpha = 80; }
+			}
+			BarRect fl = { x, yy, w * frac, h, color, alpha };
+			out[n++] = fl;
+		}
+		return n;
+	}
+
+	int AppendEnemyRects(GFxMovieView * v, BarRect * out, int n, int cap, DWORD now)
+	{
+		float l, t, r, b;
+		if(!GetVisibleRect(v, &l, &t, &r, &b)) return n;
+		int shown = 0;
+		Lock();
+		for(EnemyBarMap::iterator it = g_enemyBars.begin(); it != g_enemyBars.end(); )
+		{
+			if(now - it->second.tick > 500) { g_enemyBars.erase(it++); continue; }
+			if(shown < g_cfg.enemyBarMax && now - it->second.tick <= 250)
+			{
+				float sx, sy;
+				if(ProjectPoint(it->second.wx, it->second.wy, it->second.wz, &sx, &sy))
+				{
+					const float hx = l + (r - l) * sx;
+					const float hy = t + (b - t) * (1.0f - sy);
+					const int before = n;
+					n = AppendBarRects(out, n, cap, hx - g_cfg.enemyBarW * 0.5f, hy + g_cfg.enemyBarOffsetY, g_cfg.enemyBarW, g_cfg.enemyBarH,
+						it->second.info, it->second.info.rageState == 2, now);
+					if(n > before) shown++;
+				}
+			}
+			++it;
+		}
+		Unlock();
+		return n;
+	}
+
+	void FlushBars(DWORD now)
 	{
 		if(!g_cfg.bar2Enabled || g_bar2Dead) return;
-		const DWORD now = GetTickCount();
 		if(now - g_bar2Tick < 50) return;
 		g_bar2Tick = now;
 		GFxMovieView * v = GetHudView();
 		if(!v) return;
 		const bool init = (v != g_bar2View);
 		g_bar2View = v;
-		if(poiseFrac < 0.0f) poiseFrac = 0.0f;
-		if(poiseFrac > 1.0f) poiseFrac = 1.0f;
-		if(postureFrac < 0.0f) postureFrac = 0.0f;
-		if(postureFrac > 1.0f) postureFrac = 1.0f;
-		if(!InvokeDrawBars(v, init, g_cfg.bar2X, g_cfg.bar2Y, g_cfg.bar2W, g_cfg.bar2H, poiseFrac, postureFrac))
+		BarRect rects[160];
+		int n = 0;
+		if(g_playerBarValid) n = AppendBarRects(rects, n, 160, g_cfg.bar2X, g_cfg.bar2Y, g_cfg.bar2W, g_cfg.bar2H, g_playerBar, true, now);
+		if(g_cfg.enemyBars) n = AppendEnemyRects(v, rects, n, 160, now);
+		if(!InvokeDrawRects(v, init, rects, n))
 		{
 			g_bar2Dead = true;
-			_MESSAGE("WARNING: the second bar crashed while drawing (caught) - turned off for this session");
+			_MESSAGE("WARNING: the extra bars crashed while drawing (caught) - turned off for this session");
 		}
-		else if(init) _MESSAGE("second bar: HUD drawing started (experimental)");
+		else if(init) _MESSAGE("bars: HUD drawing started (poise + rage lines)");
+	}
+
+	void RecordEnemyBar(Actor * a, UInt32 id, const BarInfo & info, DWORD now)
+	{
+		float wx, wy, wz;
+		if(!ReadHeadPos(a, &wx, &wy, &wz)) return;
+		Lock();
+		if(g_enemyBars.size() > 64) g_enemyBars.clear();
+		EnemyBar & e = g_enemyBars[id];
+		e.wx = wx; e.wy = wy; e.wz = wz; e.info = info; e.tick = now;
+		Unlock();
+	}
+
+	// Estamina cheia (usado durante a furia do jogador).
+	void FillStamina(Actor * a)
+	{
+		float c = 0.0f, m = 0.0f;
+		if(ReadAV(a, 26, &c, &m) && c < m - 0.5f) RestoreAV(a, 26, m - c);
 	}
 
 	// Poise: a barra mostra o que resta. Postura: a barra mostra o que ja encheu (cheia = BleedOut).
+	// O TrueHUD chama isto para cada ator com barra (e todos os quadros para o jogador).
 	float HudGetCur(Actor * a)
 	{
 		ActorStats s;
@@ -880,23 +1108,44 @@ namespace
 		const float mx = ComputeMax(s), mp = ComputeMaxPosture(s);
 		if((s.isPlayer && !g_cfg.applyPlayer) || (!s.isPlayer && !g_cfg.applyNPCs)) return (g_cfg.hudBar == 0) ? mx : 0.0f;
 		const DWORD now = GetTickCount();
-		Lock();
-		PoiseState & st = FindOrCreate(s.id, mx, mp, now);
-		Regen(st, now);
-		RegenPosture(st, now);
+		BarInfo info;
 		float cur;
-		const float poiseFrac = (st.max > 0.0f) ? (st.cur / st.max) : 1.0f;
-		const float postureFrac = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
-		if(g_cfg.hudBar == 2)
+		bool raging = false;
+		Lock();
 		{
-			// "risco": o que estiver mais perto de quebrar (0 = tranquilo, 100 = vai quebrar)
-			float rp = (st.max > 0.0f) ? (1.0f - st.cur / st.max) : 0.0f;
-			float rs = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
-			cur = 100.0f * (rp > rs ? rp : rs);
+			PoiseState & st = FindOrCreate(s.id, mx, mp, now);
+			Regen(st, now);
+			RegenPosture(st, now);
+			float poiseFrac = (st.max > 0.0f) ? (st.cur / st.max) : 1.0f;
+			if(poiseFrac < 0.0f) poiseFrac = 0.0f;
+			if(poiseFrac > 1.0f) poiseFrac = 1.0f;
+			if(g_cfg.hudBar == 2)
+			{
+				// "risco": o que estiver mais perto de quebrar (0 = tranquilo, 100 = vai quebrar)
+				const float rp = 1.0f - poiseFrac;
+				const float rs = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
+				cur = 100.0f * (rp > rs ? rp : rs);
+			}
+			else cur = (g_cfg.hudBar == 1) ? st.pCur : st.cur;
+			info.poise = poiseFrac;
+			info.warn = (g_cfg.poiseWarnFraction > 0.0f && poiseFrac < g_cfg.poiseWarnFraction);
+			RageDisplay(st, now, !s.isPlayer, &info.rageState, &info.rageFrac);
+			raging = (now < st.rageUntil);
 		}
-		else cur = (g_cfg.hudBar == 1) ? st.pCur : st.cur;
 		Unlock();
-		if(s.isPlayer) DrawSecondBar(poiseFrac, postureFrac);
+		if(s.isPlayer)
+		{
+			if(info.rageState == 0 && g_prevPlayerRageState == 1) g_rageFlashUntil = now + 1500;	// a furia acabou de ficar pronta
+			g_prevPlayerRageState = info.rageState;
+			g_playerBar = info;
+			g_playerBarValid = true;
+			if(raging && g_cfg.rageEnabled && g_cfg.rageZeroStamina) FillStamina(a);
+			FlushBars(now);
+		}
+		else if(g_cfg.bar2Enabled && g_cfg.enemyBars && s.alive)
+		{
+			RecordEnemyBar(a, s.id, info, now);
+		}
 		return cur;
 	}
 
@@ -976,9 +1225,11 @@ namespace
 		const size_t n = g_states.size();
 		g_states.clear();
 		Unlock();
-		g_blockStart = 0;
+		g_parryUntil = 0;
+		g_parryZeroUntil = 0;
+		g_playerBarValid = false;
+		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
-		g_refundPending = 0;
 		_MESSAGE("%s: cleared %d tracked actors", why, (int)n);
 	}
 
@@ -1129,8 +1380,8 @@ namespace
 		bool parry = false;
 		if(g_cfg.parryEnabled && blocked && h.victim.isPlayer)
 		{
-			const DWORD bs = g_blockStart;
-			if(bs && (now - bs) <= (DWORD)g_cfg.parryWindowMs) { parry = true; g_blockStart = 0; }
+			const DWORD pu = g_parryUntil;
+			if(pu && now < pu) { parry = true; g_parryUntil = 0; g_parryZeroUntil = now + 200; }
 		}
 
 		const float poiseDmg = parry ? 0.0f : (blocked ? dmg * g_cfg.blockedMult : dmg);
@@ -1276,7 +1527,7 @@ namespace
 				{
 					float cost = m * g_cfg.rageNpcCostPercent / 100.0f;
 					if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;
-					if(cost > 0.0f) AddAV(va, av, -cost);
+					if(cost > 0.0f) RestoreAV(va, av, -cost);
 				}
 			}
 			HudFlash(h.victimRef);
@@ -1286,8 +1537,7 @@ namespace
 		{
 			InterlockedIncrement(&g_parries);
 			_MESSAGE("PARRY: %08X parried %08X", h.victim.id, h.attackerId);
-			if(g_cfg.parryNoDamage) g_refundPending = 1;
-			if(g_cfg.parryFx || g_cfg.parryNoDamage) SendStaggerEvent(h.victimRef, h.attackerId, 6);
+			if(g_cfg.parryFx) SendStaggerEvent(h.victimRef, h.attackerId, 6);
 			const int ak = ParryAttacker(h, now);
 			if(ak && h.attackerActor)
 			{
@@ -1310,6 +1560,14 @@ namespace
 				h.victim.id, h.victim.isPlayer ? "(player)" : "", h.attackerId, h.sourceId, h.sourceKind, h.weaponType, h.weaponWeight, h.weaponStagger,
 				h.flags, blocked ? " BLOCKED" : "", parry ? " PARRY" : "", h.victim.armor, h.victim.hpMax, dmg, before, after, mx, pBefore, pAfter, mp,
 				bleeding ? "[bleedout/immune] " : "", (raging && !bleeding) ? "[rage] " : "", poiseBroke ? "POISE-BREAK " : "", postureBroke ? "POSTURE-BREAK" : "");
+		}
+
+		if(kind && h.victim.isPlayer && g_cfg.logPlayerEvents && g_cfg.diag)
+		{
+			float sc = 0.0f, sm = 0.0f;
+			ReadAV((Actor *)h.victimRef, 26, &sc, &sm);
+			_MESSAGE("PLAYER EVENT: kind=%d (1 light, 2 medium, 3 heavy, 4 bleedout, 5 knockback, 7 exhaustion) attacker=%08X flags=%X blocked=%d stamina=%.0f/%.0f poise=%.0f/%.0f posture=%.0f/%.0f weaponDrawn=%d",
+				kind, h.attackerId, h.flags, blocked ? 1 : 0, sc, sm, after, mx, pAfter, mp, ((Actor *)h.victimRef)->actorState.IsWeaponDrawn() ? 1 : 0);
 		}
 
 		if(kind)
@@ -1339,6 +1597,304 @@ namespace
 		}
 	};
 	HitSink g_hitSink;
+
+	// ------------------------------------------------------------------ dano de vida (ponto unico do motor)
+	// Na LE 1.9.32.0 todo o dano de vida passa por Actor::HandleHealthDamage (0x006E4700), chamada pelas tabelas de funcoes
+	// de Actor, Character e PlayerCharacter. Assim o parry sem dano, a reducao de dano da furia e o bonus em BleedOut
+	// funcionam sem Papyrus e sem perks. Enderecos e assinatura confirmados no TESV.exe 1.9.32.0.8 e no TrueHUD LE.
+	typedef void (__thiscall * HealthDamageFn)(Actor *, Actor *, float);
+	HealthDamageFn	g_origHD[3] = { NULL, NULL, NULL };
+	bool			g_hdInstalled = false;
+
+	// amount < 0 = dano. Devolve o dano ajustado. Sem objetos com destrutor: pode usar __try.
+	float AdjustHealthDamage(Actor * self, Actor * attacker, float amount)
+	{
+		if(!(amount < 0.0f) || !(amount > -1.0e9f) || !g_cfg.enabled) return amount;
+		__try
+		{
+			if(!self || self->formType != kFormType_Character) return amount;
+			InterlockedIncrement(&g_hdCalls);
+			const UInt32 id = self->formID;
+			const DWORD now = GetTickCount();
+			const bool isPlayer = (id == 0x14);
+			float result = amount;
+			const char * why = "";
+
+			// parry: dentro da janela o golpe nao causa dano de vida
+			if(isPlayer && g_cfg.parryEnabled && g_cfg.parryNoDamage && attacker && attacker != self && (now < g_parryUntil || now < g_parryZeroUntil))
+			{
+				result = 0.0f;
+				why = "parry";
+				InterlockedIncrement(&g_hdParryZero);
+			}
+			else
+			{
+				float mult = 1.0f;
+				Lock();
+				StateMap::iterator it = g_states.find(id);
+				if(it != g_states.end())
+				{
+					const PoiseState & st = it->second;
+					if(g_cfg.rageEnabled && now < st.rageUntil)
+					{
+						float red = isPlayer ? g_cfg.rageDamageReduction : g_cfg.rageNpcDamageReduction;
+						if(red < 0.0f) red = 0.0f;
+						if(red > 100.0f) red = 100.0f;
+						mult *= 1.0f - red / 100.0f;
+						why = "rage";
+						InterlockedIncrement(&g_hdRage);
+					}
+					if(now < st.bleedUntil && g_cfg.bleedDamageMult != 1.0f)
+					{
+						mult *= g_cfg.bleedDamageMult;
+						why = "bleedout";
+						InterlockedIncrement(&g_hdBleed);
+					}
+				}
+				Unlock();
+				result = amount * mult;
+			}
+			if(g_cfg.diag && result != amount && g_hdLogged < 80)
+			{
+				InterlockedIncrement(&g_hdLogged);
+				_MESSAGE("health hook: victim=%08X attacker=%08X damage %.1f -> %.1f (%s)", id, attacker ? attacker->formID : 0, -amount, -result, why);
+			}
+			return result;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			InterlockedIncrement(&g_faults);
+			return amount;
+		}
+	}
+
+	void __fastcall HookHD_Actor(Actor * self, void *, Actor * attacker, float amount)
+	{
+		amount = AdjustHealthDamage(self, attacker, amount);
+		g_origHD[0](self, attacker, amount);
+	}
+	void __fastcall HookHD_Character(Actor * self, void *, Actor * attacker, float amount)
+	{
+		amount = AdjustHealthDamage(self, attacker, amount);
+		g_origHD[1](self, attacker, amount);
+	}
+	void __fastcall HookHD_Player(Actor * self, void *, Actor * attacker, float amount)
+	{
+		amount = AdjustHealthDamage(self, attacker, amount);
+		g_origHD[2](self, attacker, amount);
+	}
+
+	bool IsExecutableAddr(const void * p)
+	{
+		MEMORY_BASIC_INFORMATION mbi;
+		if(!p || !VirtualQuery(p, &mbi, sizeof(mbi))) return false;
+		const DWORD x = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+		return mbi.State == MEM_COMMIT && (mbi.Protect & x) && !(mbi.Protect & PAGE_GUARD);
+	}
+
+	// Troca uma posicao da tabela de funcoes, encadeando com o que la estiver (outro mod pode ja ter trocado).
+	bool InstallSlot(UInt32 addr, int idx, void * replacement)
+	{
+		void ** slot = (void **)addr;
+		DWORD protection = 0, ignored = 0;
+		if(!VirtualProtect(slot, sizeof(void *), PAGE_READWRITE, &protection)) return false;
+		void * previous = NULL;
+		bool ok = false;
+		for(int tries = 0; tries < 8; tries++)
+		{
+			previous = *slot;
+			if(!IsExecutableAddr(previous)) break;
+			g_origHD[idx] = (HealthDamageFn)previous;
+			if(InterlockedCompareExchangePointer(slot, replacement, previous) == previous) { ok = true; break; }
+		}
+		VirtualProtect(slot, sizeof(void *), protection, &ignored);
+		if(ok) _MESSAGE("health hook: slot %08X chained to %p", (unsigned)addr, previous);
+		else { g_origHD[idx] = NULL; _MESSAGE("health hook: could not install on slot %08X", (unsigned)addr); }
+		return ok;
+	}
+
+	void InstallHealthHook()
+	{
+		if(g_hdInstalled) return;
+		// a funcao tem de ser mesmo a que esperamos (assinatura do TESV.exe 1.9.32.0.8)
+		static const unsigned char expect[16] = { 0x51,0x56,0x8B,0xF1,0x8B,0x06,0x8B,0x90,0x64,0x02,0x00,0x00,0x6A,0x00,0xFF,0xD2 };
+		unsigned char have[16];
+		if(!ReadBytes((void *)0x006E4700, have, 16) || memcmp(have, expect, 16) != 0)
+		{
+			_MESSAGE("health hook: the game function at 006E4700 does not match - NOT installed (parry/rage damage reduction disabled)");
+			return;
+		}
+		const bool a = InstallSlot(0x010D00C8, 0, (void *)&HookHD_Actor);
+		const bool c = InstallSlot(0x010D1AE0, 1, (void *)&HookHD_Character);
+		const bool p = InstallSlot(0x010D2428, 2, (void *)&HookHD_Player);
+		// so e seguro se as tres tabelas ficaram trocadas (uma so trocada deixaria o jogador sem protecao)
+		g_hdInstalled = a && c && p;
+		_MESSAGE("health hook: %s", g_hdInstalled ? "installed (parry, rage damage reduction, bleedout bonus)" : "PARTIAL - the hooks that did install stay active but some actors are not covered");
+		if(!g_hdInstalled) g_hdInstalled = (a || c || p);
+	}
+
+	// ------------------------------------------------------------------ dificuldade do jogo (vida estilo Sekiro)
+	SettingCollectionMap ** g_gmstColl = (SettingCollectionMap **)0x012E7164;
+
+	bool SetGMSTFloat(const char * name, float value)
+	{
+		__try
+		{
+			SettingCollectionMap * c = *g_gmstColl;
+			if(!c) return false;
+			Setting * st = c->items.Get(name);
+			if(!st || !st->name || st->name[0] != 'f') return false;
+			st->data.f32 = value;
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	void ApplyHealthGMST()
+	{
+		if(!g_cfg.healthEnabled || !g_dataLoaded) return;
+		static const char * toPC[6] = { "fDiffMultHPToPCVE", "fDiffMultHPToPCE", "fDiffMultHPToPCN", "fDiffMultHPToPCH", "fDiffMultHPToPCVH", "fDiffMultHPToPCL" };
+		static const char * byPC[6] = { "fDiffMultHPByPCVE", "fDiffMultHPByPCE", "fDiffMultHPByPCN", "fDiffMultHPByPCH", "fDiffMultHPByPCVH", "fDiffMultHPByPCL" };
+		int ok = 0;
+		for(int i = 0; i < 6; i++)
+		{
+			if(SetGMSTFloat(toPC[i], g_cfg.healthTaken)) ok++;
+			if(SetGMSTFloat(byPC[i], g_cfg.healthDealt)) ok++;
+		}
+		_MESSAGE("health: set %d/12 difficulty multipliers (damage taken x%.2f, damage dealt x%.2f - the game difficulty no longer changes health damage)", ok, g_cfg.healthTaken, g_cfg.healthDealt);
+	}
+
+	// ------------------------------------------------------------------ furia do jogador (tecla)
+	void TryRagePlayer()
+	{
+		if(!g_cfg.enabled || !g_cfg.rageEnabled) return;
+		PlayerCharacter * p = Engine::Player();
+		if(!p) return;
+		ActorStats s;
+		if(!ReadActorStats((Actor *)p, &s) || !s.alive) return;
+		const DWORD now = GetTickCount();
+		bool ok = false;
+		DWORD left = 0;
+		Lock();
+		{
+			PoiseState & st = FindOrCreate(s.id, ComputeMax(s), ComputeMaxPosture(s), now);
+			if(now >= st.rageReadyAt && now >= st.bleedUntil && now >= st.rageUntil)
+			{
+				st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * 1000.0f);
+				st.rageReadyAt = now + (DWORD)(g_cfg.rageCooldown * 1000.0f);
+				ok = true;
+			}
+			else if(st.rageReadyAt > now) left = st.rageReadyAt - now;
+		}
+		Unlock();
+		if(!ok)
+		{
+			if(g_cfg.diag) _MESSAGE("RAGE (player): refused (cooldown %.1f s left, or in bleedout)", left / 1000.0f);
+			return;
+		}
+		InterlockedIncrement(&g_rages);
+		float cost = 0.0f, cur = 0.0f, m = 0.0f;
+		const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
+		if(ReadAV((Actor *)p, av, &cur, &m))
+		{
+			cost = m * g_cfg.rageCostPercent / 100.0f;
+			if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
+			if(cost < 0.0f) cost = 0.0f;
+			if(cost > 0.0f) RestoreAV((Actor *)p, av, -cost);
+		}
+		_MESSAGE("RAGE (player): active for %.1f s, damage reduction %.0f%%, cost %.1f %s", g_cfg.rageSeconds, g_cfg.rageDamageReduction, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
+		HudFlash((TESObjectREFR *)p);
+	}
+
+	bool PlayerRaging()
+	{
+		PlayerCharacter * p = Engine::Player();
+		if(!p) return false;
+		const DWORD now = GetTickCount();
+		bool r = false;
+		Lock();
+		{
+			StateMap::iterator it = g_states.find(0x14);
+			if(it != g_states.end() && now < it->second.rageUntil) r = true;
+		}
+		Unlock();
+		return r;
+	}
+
+	// ------------------------------------------------------------------ teclas: bloqueio (parry) e furia
+	bool AnyMenuOpen()
+	{
+		MenuManager * mm = MenuManager::GetSingleton();
+		if(!mm) return true;
+		static const char * names[] = { "Console", "Journal Menu", "InventoryMenu", "MagicMenu", "ContainerMenu", "BarterMenu", "GiftMenu", "MapMenu", "StatsMenu",
+			"TweenMenu", "Book Menu", "Dialogue Menu", "Lockpicking Menu", "Sleep/Wait Menu", "Loading Menu", "MainMenu", "FavoritesMenu", "Crafting Menu",
+			"Training Menu", "RaceSex Menu", "MessageBoxMenu", "Console Native UI Menu" };
+		for(int i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++)
+		{
+			BSFixedString n(names[i]);
+			if(mm->IsMenuOpen(&n)) return true;
+		}
+		return false;
+	}
+
+	void OnBlockDown()
+	{
+		if(!g_cfg.enabled || !g_cfg.parryEnabled) return;
+		PlayerCharacter * p = Engine::Player();
+		if(!p || Engine::LifeState((Actor *)p) != 0) return;
+		if(!p->actorState.IsWeaponDrawn()) return;
+		const DWORD now = GetTickCount();
+		if(g_parryLast && (now - g_parryLast) < (DWORD)g_cfg.parryCooldownMs) return;
+		g_parryLast = now;
+		g_parryUntil = now + (DWORD)g_cfg.parryWindowMs;
+	}
+
+	void OnBlockUp()
+	{
+		g_parryUntil = 0;
+	}
+
+	void OnInput(InputEvent * first)
+	{
+		for(InputEvent * ev = first; ev; ev = ev->next)
+		{
+			if(ev->eventType != InputEvent::kEventType_Button) continue;
+			ButtonEvent * be = (ButtonEvent *)ev;
+			const bool down = (be->flags != 0) && (be->timer == 0.0f);	// "flags" guarda o valor do botao (1.0 = carregado)
+			const bool up = (be->flags == 0);
+			const char * id = be->controlID.data;
+			if(id && strcmp(id, "Left Attack/Block") == 0)
+			{
+				if(down) OnBlockDown();
+				else if(up) OnBlockUp();
+			}
+			else if(down && g_cfg.rageEnabled && ev->deviceType == kDeviceType_Keyboard && be->keyMask == (UInt32)g_cfg.rageKey && !AnyMenuOpen())
+			{
+				TryRagePlayer();
+			}
+		}
+	}
+
+	class InputSink : public BSTEventSink<InputEvent>
+	{
+	public:
+		virtual EventResult ReceiveEvent(InputEvent ** evn, InputEventDispatcher * dispatcher)
+		{
+			__try
+			{
+				if(evn && *evn) OnInput(*evn);
+			}
+			__except(EXCEPTION_EXECUTE_HANDLER)
+			{
+				InterlockedIncrement(&g_faults);
+			}
+			return kEvent_Continue;
+		}
+	};
+	InputSink g_inputSink;
 
 	// ------------------------------------------------------------------ funcoes nativas para o Papyrus
 	void N_ScriptReady(StaticFunctionTag *)
@@ -1384,6 +1940,7 @@ namespace
 	float N_GetSwingCost(StaticFunctionTag *, SInt32 mode, SInt32 rightType)
 	{
 		if(!g_cfg.stamEnabled || g_cfg.swingCostPlayer <= 0.0f) return 0.0f;
+		if(g_cfg.rageEnabled && g_cfg.rageZeroStamina && PlayerRaging()) return 0.0f;	// furia: golpes gratis
 		const DWORD now = GetTickCount();
 		if(mode == 0 && now < g_powerUntil) return 0.0f;	// o golpe forte ja pagou
 		int ty = rightType;
@@ -1401,11 +1958,6 @@ namespace
 		if(!g_cfg.stamEnabled || !g_cfg.armorRegenEnabled) return -1.0f;	// -1 = nao mexer na regeneracao
 		float r = 100.0f / (1.0f + (PlayerArmor() / 100.0f) * g_cfg.armorRegenFactor);
 		return (r < 10.0f) ? 10.0f : r;
-	}
-
-	float N_GetRageCooldown(StaticFunctionTag *)
-	{
-		return g_cfg.rageCooldown;
 	}
 
 	float N_GetExhaustSeconds(StaticFunctionTag *)
@@ -1437,21 +1989,6 @@ namespace
 		return ok;
 	}
 
-	// Parry sem dano: vida perdida desde que o jogador levantou o bloqueio (so uma vez por parry).
-	float N_GetParryRefund(StaticFunctionTag *)
-	{
-		if(InterlockedExchange(&g_refundPending, 0) == 0) return 0.0f;
-		PlayerCharacter * p = Engine::Player();
-		if(!p) return 0.0f;
-		float cur = 0.0f, mx = 0.0f;
-		if(!ReadAV((Actor *)p, 24, &cur, &mx)) return 0.0f;
-		float d = g_hpAtBlock - cur;
-		if(d < 0.0f) d = 0.0f;
-		if(d > mx) d = mx;
-		if(g_cfg.diag) _MESSAGE("parry: refunding %.1f health", d);
-		return d;
-	}
-
 	void N_PowerStart(StaticFunctionTag *)
 	{
 		g_powerUntil = GetTickCount() + 1500;
@@ -1478,64 +2015,15 @@ namespace
 		return g_cfg.kbForce;
 	}
 
-	SInt32 N_GetRageKey(StaticFunctionTag *)
+	// O Papyrus escreve no log do plugin (para descobrirmos o que se passa no jogo).
+	void N_Log(StaticFunctionTag *, BSFixedString msg)
 	{
-		return g_cfg.rageEnabled ? g_cfg.rageKey : 0;
+		if(g_cfg.diag && msg.data) _MESSAGE("papyrus: %s", msg.data);
 	}
 
-	SInt32 N_GetRageCostType(StaticFunctionTag *)
+	SInt32 N_GetLanguage(StaticFunctionTag *)
 	{
-		return g_cfg.rageCostType;
-	}
-
-	void N_BlockStart(StaticFunctionTag *)
-	{
-		g_blockStart = GetTickCount();
-		PlayerCharacter * p = Engine::Player();
-		float cur = 0.0f, mx = 0.0f;
-		if(p && ReadAV((Actor *)p, 24, &cur, &mx)) g_hpAtBlock = cur;
-	}
-
-	// O jogador carregou na tecla da furia. Devolve -1 se nao pode (recarga, BleedOut...) ou o custo a pagar (>= 0).
-	float N_TryRage(StaticFunctionTag *)
-	{
-		if(!g_cfg.enabled || !g_cfg.rageEnabled) return -1.0f;
-		PlayerCharacter * p = Engine::Player();
-		if(!p) return -1.0f;
-		ActorStats s;
-		if(!ReadActorStats((Actor *)p, &s)) return -1.0f;
-		const DWORD now = GetTickCount();
-		bool ok = false;
-		DWORD left = 0;
-		Lock();
-		{
-			PoiseState & st = FindOrCreate(s.id, ComputeMax(s), ComputeMaxPosture(s), now);
-			if(now >= st.rageReadyAt && now >= st.bleedUntil && now >= st.rageUntil)
-			{
-				st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * 1000.0f);
-				st.rageReadyAt = now + (DWORD)(g_cfg.rageCooldown * 1000.0f);
-				ok = true;
-			}
-			else if(st.rageReadyAt > now) left = st.rageReadyAt - now;
-		}
-		Unlock();
-		if(!ok)
-		{
-			if(g_cfg.diag) _MESSAGE("RAGE (player): refused (cooldown %.1f s left or in bleedout)", left / 1000.0f);
-			return -1.0f;
-		}
-		InterlockedIncrement(&g_rages);
-		float cost = 0.0f, cur = 0.0f, m = 0.0f;
-		const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
-		if(ReadAV((Actor *)p, av, &cur, &m))
-		{
-			cost = m * g_cfg.rageCostPercent / 100.0f;
-			if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
-			if(cost < 0.0f) cost = 0.0f;
-		}
-		_MESSAGE("RAGE (player): immune for %.1f s, cost %.1f %s", g_cfg.rageSeconds, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
-		HudFlash((TESObjectREFR *)p);
-		return cost;
+		return g_cfg.language;
 	}
 
 	void N_BleedDone(StaticFunctionTag *, SInt32 packed)
@@ -1546,17 +2034,13 @@ namespace
 	bool RegisterPapyrus(VMClassRegistry * registry)
 	{
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetBleedSeconds", "NahIDWinNative", N_GetBleedSeconds, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("GetRageKey", "NahIDWinNative", N_GetRageKey, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("GetRageCostType", "NahIDWinNative", N_GetRageCostType, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("BlockStart", "NahIDWinNative", N_BlockStart, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("TryRage", "NahIDWinNative", N_TryRage, registry));
 		registry->RegisterFunction(new NativeFunction2 <StaticFunctionTag, float, SInt32, SInt32>("GetSwingCost", "NahIDWinNative", N_GetSwingCost, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetRegenPercent", "NahIDWinNative", N_GetRegenPercent, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetRageCooldown", "NahIDWinNative", N_GetRageCooldown, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetExhaustSeconds", "NahIDWinNative", N_GetExhaustSeconds, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, bool>("TryExhaust", "NahIDWinNative", N_TryExhaust, registry));
-		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetParryRefund", "NahIDWinNative", N_GetParryRefund, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("PowerStart", "NahIDWinNative", N_PowerStart, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, BSFixedString>("Log", "NahIDWinNative", N_Log, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("GetLanguage", "NahIDWinNative", N_GetLanguage, registry));
 		registry->RegisterFunction(new NativeFunction3 <StaticFunctionTag, float, BSFixedString, BSFixedString, float>("IniGetF", "NahIDWinNative", N_IniGetF, registry));
 		registry->RegisterFunction(new NativeFunction3 <StaticFunctionTag, void, BSFixedString, BSFixedString, float>("IniSetF", "NahIDWinNative", N_IniSetF, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetKnockbackForce", "NahIDWinNative", N_GetKnockbackForce, registry));
@@ -1580,12 +2064,22 @@ namespace
 			case SKSEMessagingInterface::kMessage_DataLoaded:
 				g_hitEventDispatcher->AddEventSink(&g_hitSink);
 				_MESSAGE("hit event receiver registered");
+				if(g_inputEventDispatcher && *g_inputEventDispatcher)
+				{
+					(*g_inputEventDispatcher)->AddEventSink(&g_inputSink);
+					_MESSAGE("input receiver registered (parry on the block button, rage on key %d)", g_cfg.rageKey);
+				}
+				else _MESSAGE("WARNING: the input dispatcher is not available - no parry and no rage key");
+				g_dataLoaded = true;
+				InstallHealthHook();
+				ApplyHealthGMST();
 				TryHud();
 				break;
 
 			case SKSEMessagingInterface::kMessage_NewGame:
 			case SKSEMessagingInterface::kMessage_PostLoadGame:
 				ClearStates(message->type == SKSEMessagingInterface::kMessage_NewGame ? "new game" : "load game");
+				ApplyHealthGMST();
 				DumpVtable();
 				SendLoadEvent();
 				break;

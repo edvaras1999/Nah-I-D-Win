@@ -25,3 +25,7 @@ Function SetSliderDialogDefaultValue(float a_value) native
 Function SetSliderDialogRange(float a_minValue, float a_maxValue) native
 Function SetSliderDialogInterval(float a_value) native
 Function SetInfoText(string a_text) native
+Function ForcePageReset() native
+Function LoadCustomContent(string a_source, float a_x = 0.0, float a_y = 0.0) native
+Function UnloadCustomContent() native
+int Function AddEmptyOption() native
