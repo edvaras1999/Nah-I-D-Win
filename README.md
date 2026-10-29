@@ -6,9 +6,9 @@
 - **Postura** (barra lenta, estilo Sekiro): cada golpe enche-a, ela baixa sozinha. Encheu por completo: **BleedOut** (ajoelhado e indefeso).
 - Golpes bloqueados enchem as duas barras so um pouco e nao dao stagger. A dificuldade da postura esta no `.ini` (`[Posture] Difficulty`).
 
-Estado: **v0.6.0** (ainda nao testado no jogo). Novo na 0.6.0, quase tudo na DLL (sem Papyrus): dano de vida controlado por hook (parry = dano zero, furia = reducao de dano e estamina gratis, bonus de dano em BleedOut), dificuldade propria por GMST, parry pela tecla de bloqueio lida na DLL, barra do TrueHUD = postura + linhas proprias de poise e furia (jogador e, experimental, inimigos), diagnostico de eventos do jogador (para a queda a meio dos combos), MCM com 3 abas e dois idiomas (English / Portugues BR).
+Estado: **v0.6.1** (ainda nao testado no jogo). Novo na 0.6.0, quase tudo na DLL (sem Papyrus): dano de vida controlado por hook (parry = dano zero, furia = reducao de dano e estamina gratis, bonus de dano em BleedOut), dificuldade propria por GMST, parry pela tecla de bloqueio lida na DLL, barra do TrueHUD = postura + linhas proprias de poise e furia (jogador e, experimental, inimigos), diagnostico de eventos do jogador (para a queda a meio dos combos), MCM com 3 abas e dois idiomas (English / Portugues BR).
 
-**Imagens do menu**: nao fazem parte do repositorio (sao arte do utilizador). Instala-as a parte: pasta `Data/Interface/exported/nahidwin1-3.dds`.
+v0.6.1: parry com janela ajustavel (300 ms), dano zero so no golpe aparado, bloqueio normal gasta estamina do atacante, dano sem atacante (teias) ignorado, barras ligadas a visibilidade do TrueHUD, MCM sem imagens, tentativa de remover o abalo de camara (`[Camera] DisableShake`).
 
 ## Como compilar (tudo no GitHub)
 1. Cria um repositorio novo e envia estes arquivos mantendo as pastas.
