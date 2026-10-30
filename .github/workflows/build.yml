@@ -478,6 +478,8 @@ jobs:
           Copy-Item (Join-Path $ws 'dist\Data\SKSE\Plugins\NahIDWin.ini') $plug
           Copy-Item (Join-Path $ws 'dist\Data\NahIDWin.esp') (Join-Path $pkg 'Data')
           Copy-Item (Join-Path $ws 'dist\Data\SEQ\NahIDWin.seq') (Join-Path $pkg 'Data\SEQ')
+          $meshes = Join-Path $ws 'dist\Data\meshes'
+          if (Test-Path $meshes) { Copy-Item $meshes (Join-Path $pkg 'Data') -Recurse -Force }
           Get-ChildItem $pkg -Recurse -File | ForEach-Object { $_.FullName.Replace($pkg, '') + '  ' + $_.Length }
 
       - name: Guardar o pacote
