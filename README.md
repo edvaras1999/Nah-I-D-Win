@@ -6,9 +6,7 @@
 - **Postura** (barra lenta, estilo Sekiro): cada golpe enche-a, ela baixa sozinha. Encheu por completo: **BleedOut** (ajoelhado e indefeso).
 - Golpes bloqueados enchem as duas barras so um pouco e nao dao stagger. A dificuldade da postura esta no `.ini` (`[Posture] Difficulty`).
 
-Estado: **v0.6.1** (ainda nao testado no jogo). Novo na 0.6.0, quase tudo na DLL (sem Papyrus): dano de vida controlado por hook (parry = dano zero, furia = reducao de dano e estamina gratis, bonus de dano em BleedOut), dificuldade propria por GMST, parry pela tecla de bloqueio lida na DLL, barra do TrueHUD = postura + linhas proprias de poise e furia (jogador e, experimental, inimigos), diagnostico de eventos do jogador (para a queda a meio dos combos), MCM com 3 abas e dois idiomas (English / Portugues BR).
-
-v0.6.1: parry com janela ajustavel (300 ms), dano zero so no golpe aparado, bloqueio normal gasta estamina do atacante, dano sem atacante (teias) ignorado, barras ligadas a visibilidade do TrueHUD, MCM sem imagens, tentativa de remover o abalo de camara (`[Camera] DisableShake`).
+Estado: **v0.7.0** (ainda nao testado no jogo). Novo: o parry passou a ser uma **janela de imunidade total** aberta ao carregar no bloqueio (250 ms, recarga 200 ms, so golpes de frente), decidida so pelo tempo e sem devolver vida; o bloqueio normal do jogo fica intacto e apenas gasta estamina ao atacante; no parry o atacante leva postura, stagger leve e perde estamina (sem mexer no poise). Efeitos (faiscas/sons) proprios no NahIDWin.esp: os ficheiros .nif/.wav vem do pacote `NahIDWin-efeitos-inpa.zip` (instalar a parte, nao vai para o repositorio).
 
 ## Como compilar (tudo no GitHub)
 1. Cria um repositorio novo e envia estes arquivos mantendo as pastas.
@@ -32,3 +30,4 @@ avisos se o script nao responde, e um despejo das funcoes de animacao do jogador
 ## Licenca
 GPL-3.0 (ver `nahidwin/LICENSE`). A base de compilacao e os enderecos vem do FreeClimb LE / SoftTarget LE. Os registos do efeito de stagger
 seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do TrueHUD LE (Mhacks79, baseada no TrueHUD de Ersh).
+
