@@ -31,3 +31,11 @@ avisos se o script nao responde, e um despejo das funcoes de animacao do jogador
 GPL-3.0 (ver `nahidwin/LICENSE`). A base de compilacao e os enderecos vem do FreeClimb LE / SoftTarget LE. Os registos do efeito de stagger
 seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do TrueHUD LE (Mhacks79, baseada no TrueHUD de Ersh).
 
+
+## v0.9.0 - menu unico (herda o menu do Inpa Sekiro Combat)
+- `papyrus/src/NahIDWinMCM.psc` agora `extends zzzSekiro_MCM`: as paginas "MOD Setting" e "Game Setting" (com o interruptor MOD On/Off) sao do Inpa,
+  sem alteracoes; as paginas "Poise and Posture", "Block and Rage" e "Stamina, HUD, System" sao as nossas. A pagina inicial fica sem imagem.
+  O interruptor MOD On/Off do Inpa tambem poe `General Enabled` no .ini.
+- `papyrus/stubs/zzzSekiro_MCM.psc` e so um apoio para compilar. O script verdadeiro vem do pacote privado (Inpa).
+- `tools/make_esp.py` ja nao cria quest de menu: o menu so existe com o ESP fundido (`tools/merge_inpa.py`).
+- Ressurreicao desligada por omissao; cloak neutralizado; os feitiços de NPC e aliados vao por SPID (NahIDWin_DISTR.ini, obrigatorio).
