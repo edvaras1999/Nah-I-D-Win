@@ -39,3 +39,9 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - `papyrus/stubs/zzzSekiro_MCM.psc` e so um apoio para compilar. O script verdadeiro vem do pacote privado (Inpa).
 - `tools/make_esp.py` ja nao cria quest de menu: o menu so existe com o ESP fundido (`tools/merge_inpa.py`).
 - Ressurreicao desligada por omissao; cloak neutralizado; os feitiços de NPC e aliados vao por SPID (NahIDWin_DISTR.ini, obrigatorio).
+
+## v0.9.1
+- Removida a pasta `dist/Data/meshes` (25 ficheiros .hkx de 0 bytes substituíam as animações verdadeiras de bloqueio e stagger).
+- Postura quebrada num NPC = `poisebreak` do Inpa (stagger grande, som, janela de execução com animação do jogo base), disparado pela NOSSA postura, sem mexer na estamina do alvo. Sem o Inpa (ou no jogador) fica a animação de ajoelhado.
+- O SPID geral foi retirado: a DLL avisa o script ponte quando um ator entra em combate (`NahIDWin_Combatant`) e o script dá-lhe o feitiço do Inpa (aliado ou inimigo) uma vez. O SPID serve só para o perk de bloqueio dos NPCs.
+- `PowerStart` declarado em NahIDWinNative.psc (o log da v0.9.0 avisava que faltava).
