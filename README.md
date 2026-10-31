@@ -45,3 +45,6 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Postura quebrada num NPC = `poisebreak` do Inpa (stagger grande, som, janela de execução com animação do jogo base), disparado pela NOSSA postura, sem mexer na estamina do alvo. Sem o Inpa (ou no jogador) fica a animação de ajoelhado.
 - O SPID geral foi retirado: a DLL avisa o script ponte quando um ator entra em combate (`NahIDWin_Combatant`) e o script dá-lhe o feitiço do Inpa (aliado ou inimigo) uma vez. O SPID serve só para o perk de bloqueio dos NPCs.
 - `PowerStart` declarado em NahIDWinNative.psc (o log da v0.9.0 avisava que faltava).
+
+## v0.9.2
+- O pacote do Actions deixou de levar NahIDWin.esp e .seq (vêm só do pacote privado), para não haver dois ESP com o mesmo nome. O .ini do repositório já vem com `[Inpa] Mode=1`.
