@@ -1,4 +1,5 @@
 Scriptname SKI_ConfigBase extends SKI_QuestBase Native Hidden
+Event OnInit() native
 ; Arquivo de apoio SO PARA COMPILAR (o SkyUI real e que corre no jogo). Copia das assinaturas usadas do SDK do SkyUI.
 string Property ModName Auto
 string[] Property Pages Auto
@@ -30,3 +31,13 @@ Function ForcePageReset() native
 Function LoadCustomContent(string a_source, float a_x = 0.0, float a_y = 0.0) native
 Function UnloadCustomContent() native
 int Function AddEmptyOption() native
+int Property OPTION_FLAG_NONE = 0 AutoReadOnly
+int Property OPTION_FLAG_DISABLED = 1 AutoReadOnly
+Event OnOptionMenuOpen(int a_option) native
+Event OnOptionMenuAccept(int a_option, int a_index) native
+int Function AddMenuOption(string a_text, string a_value, int a_flags = 0) native
+Function SetMenuDialogOptions(string[] a_options) native
+Function SetMenuDialogStartIndex(int a_value) native
+Function SetMenuDialogDefaultIndex(int a_value) native
+Function SetMenuOptionValue(int a_option, string a_value, bool a_noUpdate = false) native
+Function SetOptionFlags(int a_option, int a_flags, bool a_noUpdate = false) native

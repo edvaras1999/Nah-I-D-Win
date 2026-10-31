@@ -48,3 +48,11 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 
 ## v0.9.2
 - O pacote do Actions deixou de levar NahIDWin.esp e .seq (vêm só do pacote privado), para não haver dois ESP com o mesmo nome. O .ini do repositório já vem com `[Inpa] Mode=1`.
+
+## v0.10.0 - menu proprio (3 abas), sem herdar do Inpa
+- `NahIDWinMCM.psc` e um menu novo (SKI_ConfigBase), no estilo do Inpa (cabecalhos laranja, MOD On/Off), com tres abas: MOD Setting, Game Setting e Advanced.
+  As opcoes do Inpa gravam nos mesmos globais dele e aplicam os mesmos Game Settings (o Inpa reaplica-os ao carregar); as nossas gravam no .ini.
+- MOD On/Off liga/desliga Inpa + NahIDWin (General Enabled).
+- Removido do menu: Regenerate Stamina, Posture Damage Mult do Inpa, Ressurreicao, PowerAttack stamina limit, modos de execucao do VioLens, barras extras.
+- Novo: `[NpcBlock] ChanceMin` (chance de bloqueio dos NPCs, reposta pela ponte apos o Inpa); sliders Combat Stamina Regen e Stamina Regen Delay.
+- `zzzSekiro_MCM.pex` ja nao e usado nem enviado. Stub novo: GlobalVariable.

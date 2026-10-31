@@ -24,6 +24,15 @@ EndEvent
 ; A DLL avisa quando um save e carregado: os registos de animacao perdem-se, entao registamos de novo.
 Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterInputs()
+	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
+	Utility.Wait(8.0)
+	ApplyNpcBlock()
+EndFunction
+
+Function ApplyNpcBlock()
+	if NahIDWinNative.IniGetF("General", "Enabled", 1.0) > 0.5
+		Game.SetGameSettingFloat("fCombatBlockChanceMin", NahIDWinNative.IniGetF("NpcBlock", "ChanceMin", 0.3))
+	endif
 EndFunction
 
 Function RegisterInputs()

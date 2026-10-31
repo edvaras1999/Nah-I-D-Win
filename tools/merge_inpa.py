@@ -23,7 +23,7 @@ mk = mk.replace('OWN = 0x01000000', 'OWN = 0x04000000')
 mk = re.sub(r"EXPL_PARRY = .*?\n(?=\n|n_records)", '', mk, flags=re.S) if False else mk
 ns = {'__file__': os.path.join(HERE, 'make_esp.py')}
 exec(compile(mk, 'make_esp', 'exec'), ns)
-OWN_MGEF, OWN_SPELS, OWN_QUSTS = ns['mgef'], ns['spels'], [ns['qust']]    # o menu e o do Inpa (herdado por NahIDWinMCM)
+OWN_MGEF, OWN_SPELS, OWN_QUSTS = ns['mgef'], ns['spels'], [ns['qust']]    # o menu e o nosso NahIDWinMCM (substitui o do Inpa)
 
 # ---------- ler o ESP do Inpa ----------
 tes4_sz = struct.unpack('<I', d[4:8])[0]
@@ -90,7 +90,7 @@ for _, rl in groups:
                 if v[i + 3] == 5 and struct.unpack('<I', v[i:i + 4])[0] >> 24 == 5: stale += 1
 print('referencias 05xxxxxx por converter (esperado 0):', stale)
 
-# ---------- menu unico: o script do menu do Inpa passa a ser o nosso NahIDWinMCM (que herda o dele) ----------
+# ---------- menu unico: a quest do menu passa a usar o nosso NahIDWinMCM (nao herda do Inpa; usa as mesmas propriedades) ----------
 OLD = b'\x12\x00Inpa Sekiro Combat'
 NEWNAME = b'NAH-I-D-WIN'
 def menu_quest(r):
@@ -105,7 +105,7 @@ def menu_quest(r):
             nm = b'NahIDWinMCM'
             v = v[:6] + struct.pack('<H', len(nm)) + nm + v[8 + n:]
         body += t + struct.pack('<H', len(v)) + v
-    print('  quest do menu: script NahIDWinMCM (herda zzzSekiro_MCM), ModName', NEWNAME.decode())
+    print('  quest do menu: script NahIDWinMCM (menu proprio, mesmas propriedades), ModName', NEWNAME.decode())
     return r[:4] + struct.pack('<I', len(body)) + r[8:24] + body
 groups = [(l, [menu_quest(r) for r in rl] if l == b'QUST' else rl) for l, rl in groups]
 

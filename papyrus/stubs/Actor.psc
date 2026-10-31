@@ -11,3 +11,5 @@ bool Function IsInKillMove() native
 bool Function HasSpell(Form akForm) native
 bool Function AddSpell(Spell akSpell, bool abVerbose = true) native
 int Function GetFactionReaction(Actor akOther) native
+bool Function RemoveSpell(Spell akSpell) native
+bool Function DispelSpell(Spell akSpell) native
