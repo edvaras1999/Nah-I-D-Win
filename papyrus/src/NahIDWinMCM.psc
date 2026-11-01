@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 22
+	return 23
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 4
+	if count > 0 && tableRev == 5
 		return
 	endif
-	tableRev = 4
+	tableRev = 5
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -555,7 +555,6 @@ Function BuildTable()
 	AddSetting(7, 0, "Stagger", "LightCooldownMs", "Espaco do stagger leve - NPCs (ms)", "Light stagger spacing - NPCs (ms)", "Tempo minimo entre dois staggers leves.", "Minimum time between two light staggers.", 100.0, 3000.0, 100.0, 700.0)
 	AddSetting(7, 0, "Stagger", "LightCooldownPlayerMs", "Espaco do stagger leve - jogador (ms)", "Light stagger spacing - player (ms)", "Mais espaco = menos tempo travado a levar golpes.", "More spacing = less time locked while being hit.", 100.0, 5000.0, 100.0, 1500.0)
 	AddSetting(7, 0, "Stagger", "PlayerImmuneAfterSeconds", "Imunidade do jogador apos stagger (s)", "Player immunity after stagger (s)", "Depois de levares um stagger do jogo, ficas este tempo sem o levar de novo (para bloquear ou esquivar). 0 = desligado. Staggers pesados do mod passam sempre.", "After the game staggers you, you cannot be staggered again for this long (to block or dodge). 0 = off. The mod heavy staggers always go through.", 0.0, 5.0, 0.1, 1.5)
-	AddSetting(7, 0, "Stagger", "PowerAttackImmuneSeconds", "Imunidade em golpes fortes (s)", "Immunity during power attacks (s)", "O jogador nao e travado por stagger durante este tempo depois de iniciar um golpe forte. 0 = desligado.", "The player is not staggered for this long after starting a power attack. 0 = off.", 0.0, 5.0, 0.5, 2.0)
 	AddSetting(7, 1, "Stagger", "MediumOnPowerAttack", "Stagger medio em golpe forte", "Medium stagger on power attack", "Golpe forte ou de escudo sem bloquear da stagger medio.", "An unblocked power attack or bash causes a medium stagger.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 1, "Knockback", "Enabled", "Empurrao ligado", "Knockback enabled", "Empurrao no stagger pesado, so em condicoes especificas.", "Knockback on heavy stagger, only in specific conditions.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 0, "Knockback", "Force", "Forca do empurrao", "Knockback force", "0 = sem empurrao.", "0 = no knockback.", 0.0, 5.0, 0.1, 1.0)
@@ -589,15 +588,20 @@ Function BuildTable()
 	AddSetting(13, 1, "HUD", "Enabled", "Barras proprias (postura e furia)", "Own bars (posture and rage)", "Mostra a postura e a furia do jogador e do alvo. Precisa do NahIDWinHUD.swf em Data/Interface.", "Shows posture and rage for the player and the target. Needs NahIDWinHUD.swf in Data/Interface.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "Player", "Barras do jogador", "Player bars", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "PlayerAlways", "Barras do jogador sempre visiveis", "Player bars always visible", "Desligado = so aparecem em combate ou com a furia ativa.", "Off = only shown in combat or while rage is active.", 0.0, 1.0, 1.0, 0.0)
-	AddSetting(13, 1, "HUD", "TargetAnchor", "Alvo: seguir a barra de vida do jogo", "Target: follow the game health bar", "Desligado = posicao fixa (TargetFallbackX/Y). Ligado = por baixo do nome do inimigo.", "Off = fixed position (TargetFallbackX/Y). On = under the enemy name.", 0.0, 1.0, 1.0, 0.0)
-	AddSetting(13, 0, "HUD", "TargetFallbackX", "Alvo: posicao X (fixa)", "Target: X position (fixed)", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 1280.0, 5.0, 540.0)
-	AddSetting(13, 0, "HUD", "TargetFallbackY", "Alvo: posicao Y (fixa)", "Target: Y position (fixed)", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 720.0, 2.0, 60.0)
 	AddSetting(13, 1, "HUD", "Target", "Barras do alvo (mira)", "Target bars (lock-on)", "Mostra por baixo da barra de vida do inimigo que esta na mira.", "Shown under the health bar of the locked-on enemy.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "RageIcon", "Icone da furia ativa", "Active rage icon", "Losango piscante ao lado das barras quando a furia esta ativa.", "Flashing diamond next to the bars while rage is active.", 0.0, 1.0, 1.0, 1.0)
-	AddSetting(13, 0, "HUD", "PlayerX", "Jogador: posicao X", "Player: X position", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 1280.0, 5.0, 1020.0)
-	AddSetting(13, 0, "HUD", "PlayerY", "Jogador: posicao Y", "Player: Y position", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 720.0, 2.0, 684.0)
+	AddSetting(13, 2, "HUD", "BarStyle", "Estilo das barras", "Bar style", "Plana ou estilo Sekiro (enche dos dois lados para o centro).", "Flat or Sekiro style (fills from both sides toward the center).", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 2, "HUD", "PlayerPosH", "Jogador: posicao horizontal", "Player: horizontal position", "Esquerda, centro ou direita do ecra.", "Left, center or right of the screen.", 0.0, 2.0, 1.0, 0.0)
+	AddSetting(13, 2, "HUD", "PlayerPosV", "Jogador: posicao vertical", "Player: vertical position", "Cima, centro ou baixo do ecra.", "Top, center or bottom of the screen.", 0.0, 2.0, 1.0, 2.0)
+	AddSetting(13, 0, "HUD", "PlayerShiftX", "Jogador: ajuste X", "Player: X adjust", "Pixeis a somar a posicao escolhida (positivo = direita).", "Pixels added to the chosen position (positive = right).", -640.0, 640.0, 5.0, 120.0)
+	AddSetting(13, 0, "HUD", "PlayerShiftY", "Jogador: ajuste Y", "Player: Y adjust", "Pixeis a somar a posicao escolhida (positivo = baixo).", "Pixels added to the chosen position (positive = down).", -360.0, 360.0, 1.0, -117.0)
 	AddSetting(13, 0, "HUD", "PlayerWidth", "Jogador: largura", "Player: width", "", "", 50.0, 600.0, 5.0, 200.0)
-	AddSetting(13, 0, "HUD", "TargetOffsetY", "Alvo: distancia abaixo do nome", "Target: distance below name", "Aumenta para descer as barras do alvo.", "Increase to move the target bars down.", -60.0, 120.0, 2.0, 22.0)
+	AddSetting(13, 2, "HUD", "TargetPosH", "Alvo: posicao horizontal", "Target: horizontal position", "Esquerda, centro ou direita do ecra.", "Left, center or right of the screen.", 0.0, 2.0, 1.0, 1.0)
+	AddSetting(13, 2, "HUD", "TargetPosV", "Alvo: posicao vertical", "Target: vertical position", "Cima, centro ou baixo do ecra.", "Top, center or bottom of the screen.", 0.0, 2.0, 1.0, 0.0)
+	AddSetting(13, 0, "HUD", "TargetShiftX", "Alvo: ajuste X", "Target: X adjust", "Pixeis a somar a posicao escolhida (positivo = direita).", "Pixels added to the chosen position (positive = right).", -640.0, 640.0, 5.0, 0.0)
+	AddSetting(13, 0, "HUD", "TargetShiftY", "Alvo: ajuste Y", "Target: Y adjust", "Pixeis a somar a posicao escolhida (positivo = baixo).", "Pixels added to the chosen position (positive = down).", -360.0, 360.0, 1.0, 55.0)
+	AddSetting(13, 0, "HUD", "TargetWidth", "Alvo: largura (0 = 200)", "Target: width (0 = 200)", "", "", 0.0, 600.0, 5.0, 0.0)
+	AddSetting(13, 1, "HUD", "TargetAnchor", "Alvo: seguir a barra de vida do jogo", "Target: follow the game health bar", "Ligado = por baixo do nome do inimigo (se a barra do jogo estiver visivel).", "On = under the enemy name (if the game bar is visible).", 0.0, 1.0, 1.0, 0.0)
 	AddSetting(11, 1, "Diagnostics", "Enabled", "Diagnostico no log", "Diagnostics in log", "Escreve o que acontece em NahIDWin.log.", "Writes what happens to NahIDWin.log.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "Diagnostics", "LogPlayerEvents", "Registar eventos que afetam o jogador", "Log events hitting the player", "Ajuda a descobrir a queda a meio dos combos.", "Helps find the fall during combos.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(12, 1, "Block", "DrainEnabled", "Bloqueio gasta estamina do atacante", "Block drains attacker stamina", "Bloqueio normal (sem parry) gasta estamina do atacante. Sem stagger.", "Normal block (no parry) drains the attacker's stamina. No stagger.", 0.0, 1.0, 1.0, 1.0)
@@ -678,13 +682,46 @@ string Function SneakName(int v)
 	return Tr("Script Animation", "Animacao")
 EndFunction
 
+; opcoes do .ini escolhidas num menu (posicao do HUD, estilo)
+int Function IniChoiceCount(string key)
+	if key == "BarStyle"
+		return 2
+	endif
+	return 3
+EndFunction
+
+string Function IniChoiceName(string key, int v)
+	if key == "BarStyle"
+		if v == 0
+			return Tr("Flat", "Plana")
+		endif
+		return "Sekiro"
+	endif
+	if key == "PlayerPosH" || key == "TargetPosH"
+		if v <= 0
+			return Tr("Left", "Esquerda")
+		elseif v == 1
+			return Tr("Center", "Centro")
+		endif
+		return Tr("Right", "Direita")
+	endif
+	if v <= 0
+		return Tr("Top", "Cima")
+	elseif v == 1
+		return Tr("Center", "Centro")
+	endif
+	return Tr("Bottom", "Baixo")
+EndFunction
+
 Function DrawBlock(int blk, string en, string pt)
 	Hdr(en, pt)
 	int i = 0
 	while i < count
 		if sBlk[i] == blk
 			float cur = NahIDWinNative.IniGetF(sSec[i], sKey[i], sDef[i])
-			if sType[i] == 1
+			if sType[i] == 2
+				Track(AddMenuOption(LabelOf(i), IniChoiceName(sKey[i], cur as int), sFlag), 9, i)
+			elseif sType[i] == 1
 				Track(AddToggleOption(LabelOf(i), cur > 0.5, sFlag), 2, i)
 			else
 				Track(AddSliderOption(LabelOf(i), cur, FormatFor(i), sFlag), 3, i)
@@ -843,6 +880,9 @@ Event OnOptionDefault(int a_option)
 	elseif k == 3
 		NahIDWinNative.IniSetF(sSec[r], sKey[r], sDef[r])
 		SetSliderOptionValue(a_option, sDef[r], FormatFor(r))
+	elseif k == 9
+		NahIDWinNative.IniSetF(sSec[r], sKey[r], sDef[r])
+		SetMenuOptionValue(a_option, IniChoiceName(sKey[r], sDef[r] as int))
 	elseif k == 5
 		GetG(r).SetValue(GDef(r))
 		SetSliderOptionValue(a_option, GDef(r), GFmt(r))
@@ -884,6 +924,22 @@ EndEvent
 Event OnOptionMenuOpen(int a_option)
 	int slot = a_option % 128
 	int r = oRef[slot]
+	if oKind[slot] == 9
+		int n = IniChoiceCount(sKey[r])
+		string[] opts9 = new string[3]
+		opts9[0] = IniChoiceName(sKey[r], 0)
+		opts9[1] = IniChoiceName(sKey[r], 1)
+		opts9[2] = IniChoiceName(sKey[r], 2)
+		if n == 2
+			opts9 = new string[2]
+			opts9[0] = IniChoiceName(sKey[r], 0)
+			opts9[1] = IniChoiceName(sKey[r], 1)
+		endif
+		SetMenuDialogOptions(opts9)
+		SetMenuDialogStartIndex(NahIDWinNative.IniGetF(sSec[r], sKey[r], sDef[r]) as int)
+		SetMenuDialogDefaultIndex(sDef[r] as int)
+		return
+	endif
 	if oKind[slot] != 6
 		return
 	endif
@@ -909,6 +965,11 @@ EndEvent
 Event OnOptionMenuAccept(int a_option, int a_index)
 	int slot = a_option % 128
 	int r = oRef[slot]
+	if oKind[slot] == 9 && a_index >= 0
+		NahIDWinNative.IniSetF(sSec[r], sKey[r], a_index as float)
+		SetMenuOptionValue(a_option, IniChoiceName(sKey[r], a_index))
+		return
+	endif
 	if oKind[slot] != 6 || a_index < 0
 		return
 	endif
@@ -1003,7 +1064,7 @@ Event OnOptionHighlight(int a_option)
 		SetInfoText(Tr("Turns Inpa Sekiro and NahIDWin on/off together. Do it out of combat.", "Liga/desliga o Inpa Sekiro e o NahIDWin em conjunto. Faz isto fora de combate."))
 	elseif k == 7
 		SetInfoText(Tr("Switch between English and Portugues (BR).", "Alterna entre English e Portugues (BR)."))
-	elseif k == 2 || k == 3
+	elseif k == 2 || k == 3 || k == 9
 		SetInfoText(Tr(sInfoEN[r], sInfoPT[r]))
 	elseif k == 4 || k == 5 || k == 6
 		SetInfoText(GInfo(r))

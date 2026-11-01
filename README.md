@@ -88,3 +88,10 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **HUD**: barras do alvo em posicao fixa por defeito (`TargetAnchor=0`); escondem-se com qualquer menu aberto.
 - Diagnostico: mais eventos de animacao no log (`PLAYER ANIM`).
 - Por fazer: modo manual com aura de fogo (G liga/desliga, 10 s, 2%/s de vida, animacao via DAR).
+
+## v0.13.0
+
+- **Queda ao quebrar o poise de um inimigo (causa raiz)**: `Actor.PushActorAway(alvo, forca)` empurra o argumento para longe de quem chama. O script chamava `vitima.PushActorAway(atacante)`, ou seja empurrava o ATACANTE (o jogador). Agora e `atacante.PushActorAway(vitima)`.
+- **Escudo de stagger na furia (jogador e NPCs)**: a DLL encadeia a funcao de notificacao do grafo de animacao e ignora `staggerStart` / `recoilStart`... enquanto o ator esta em furia. Os nossos proprios staggers passam sempre. `[Rage] StaggerImmune=0` desliga. A imunidade em golpes fortes foi retirada.
+- **Barras estilo Sekiro**: a postura enche dos dois lados para o centro (`[HUD] BarStyle=1`; 0 = plana). Posicao por preset (esquerda/centro/direita x cima/centro/baixo) + ajuste X/Y em pixeis, para jogador e alvo, no menu e no ini.
+- Log: `stagger shield: hook installed...` e `shield blocked=N` no SUMMARY.

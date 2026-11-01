@@ -29,7 +29,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
 	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.11.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.13.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -63,11 +63,7 @@ Function RegisterInputs()
 		RegisterForAnimationEvent(pl, "ragdollStart")
 		RegisterForAnimationEvent(pl, "recoilStop")
 		RegisterForAnimationEvent(pl, "staggerStop")
-		RegisterForAnimationEvent(pl, "attackStop")
-		RegisterForAnimationEvent(pl, "attackStart")
-		RegisterForAnimationEvent(pl, "attackRelease")
 		RegisterForAnimationEvent(pl, "attackPowerStartForwardLeftHand")
-		RegisterForAnimationEvent(pl, "SneakStop")
 		RegisterForAnimationEvent(pl, "ragdollEnd")
 		RegisterForAnimationEvent(pl, "GetUpStart")
 		RegisterForAnimationEvent(pl, "GetUpEnd")
@@ -89,33 +85,17 @@ Function OnPlayerStagger()
 	RegisterForSingleUpdate(win)
 EndFunction
 
-; Golpe forte (carregado ou nao): o jogador nao e travado por stagger enquanto ataca.
-; [Stagger] PowerAttackImmuneSeconds no .ini (0 = desligado).
-Function OnPlayerPowerAttack()
-	float win = NahIDWinNative.IniGetF("Stagger", "PowerAttackImmuneSeconds", 2.0)
-	if win <= 0.0
-		return
-	endif
-	sNoStagger = true
-	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", true)
-	RegisterForSingleUpdate(win)
-EndFunction
-
 Event OnUpdate()
 	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", false)
 	sNoStagger = false
 EndEvent
 
-; Furia (jogador e NPC): imunidade a stagger durante a furia + brilho e/ou simbolo vermelho.
+; Furia (jogador e NPC): brilho e/ou simbolo vermelho.
 ; [Rage] StaggerImmune: 1 = ligado. [Rage] NPCVisual / PlayerVisual: 0 nada, 1 brilho, 2 simbolo, 3 os dois.
 Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	Actor a = sender as Actor
 	if !a
 		return
-	endif
-	bool imm = NahIDWinNative.IniGetF("Rage", "StaggerImmune", 1.0) > 0.5
-	if imm
-		a.SetAnimationVariableBool("bNoStagger", true)
 	endif
 	int mode = NahIDWinNative.IniGetF("Rage", "NPCVisual", 1.0) as int
 	if a == Game.GetPlayer()
@@ -137,7 +117,7 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if symbol
 		ss = "ok"
 	endif
-	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss + " staggerImmune " + imm)
+	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss)
 	if glow
 		glow.Cast(a, a)
 	endif
@@ -150,9 +130,6 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	endif
 	if symbol
 		a.DispelSpell(symbol)
-	endif
-	if imm
-		a.SetAnimationVariableBool("bNoStagger", false)
 	endif
 EndFunction
 
@@ -167,7 +144,7 @@ EndFunction
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
 Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
-	if asEventName == "recoilStop" || asEventName == "staggerStop" || asEventName == "attackStop" || asEventName == "attackStart" || asEventName == "attackRelease" || asEventName == "SneakStop" || asEventName == "ragdollEnd" || asEventName == "GetUpStart" || asEventName == "GetUpEnd"
+	if asEventName == "recoilStop" || asEventName == "staggerStop" || asEventName == "ragdollEnd" || asEventName == "GetUpStart" || asEventName == "GetUpEnd"
 		NahIDWinNative.Log("PLAYER ANIM: " + asEventName)
 		return
 	endif
@@ -177,9 +154,6 @@ Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 			OnPlayerStagger()
 		endif
 		return
-	endif
-	if asEventName != "weaponSwing" && asEventName != "weaponLeftSwing" && asEventName != "bashStart"
-		OnPlayerPowerAttack()
 	endif
 	int mode = 0
 	if asEventName == "bashStart" || asEventName == "bashPowerStart"
@@ -277,7 +251,7 @@ Function OnNahStagger(string eventName, string strArg, float numArg, Form sender
 			if kind == 5
 				float force = NahIDWinNative.GetKnockbackForce()
 				if force > 0.0 && attacker && attacker != victim
-					victim.PushActorAway(attacker, force)
+					attacker.PushActorAway(victim, force)
 				endif
 			endif
 		endif

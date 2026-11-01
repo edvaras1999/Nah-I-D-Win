@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.12.0 (furia: reducao extra + bonus de dano + imunidade a stagger; HUD fixo; imunidade em golpes fortes; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.13.0 (empurrao corrigido; escudo de stagger na furia; barras estilo Sekiro com posicao;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -245,6 +245,7 @@ namespace
 		float	rageNpcDamageBonus;		// idem NPCs
 		float	rageLifeCost;			// % da vida maxima (custo em vida)
 		int		rageZeroStamina;		// a estamina do jogador nao desce durante a furia
+		int		rageStaggerShield;		// 1 = sem stagger durante a furia
 		int		rageNpc;				// NPCs ativam sozinhos
 		float	rageNpcPosture;			// ativa quando a postura passa desta fracao
 		float	rageNpcPoise;			// ... ou o poise desce abaixo desta fracao
@@ -281,6 +282,10 @@ namespace
 		int		wTarget;			// barras do alvo
 		int		wIcon;				// 1 = icone da furia ativa
 		int		wAnchor;			// 1 = alvo preso a barra de vida do jogo; 0 = posicao fixa
+		int		wStyle;				// 0 plana, 1 Sekiro (enche dos dois lados)
+		int		wPosH, wPosV, wTPosH, wTPosV;	// 0/1/2 = esquerda/centro/direita, cima/centro/baixo
+		float	wShiftX, wShiftY, wTShiftX, wTShiftY;
+		float	wScreenW, wScreenH;
 		float	wPX, wPY, wPW, wPH;	// posicao/tamanho das barras do jogador
 		float	wTOffX, wTOffY, wTW, wTH;	// barras do alvo (relativas ao nome do alvo)
 		float	wFX, wFY;			// posicao se a barra de vida do jogo nao existir
@@ -439,6 +444,7 @@ namespace
 		c.rageDamageBonus = IniF("Rage", "DamageBonus", 20.0f);
 		c.rageNpcDamageBonus = IniF("Rage", "NPCDamageBonus", 10.0f);
 		c.rageLifeCost = IniF("Rage", "LifeCostPercent", 20.0f);
+		c.rageStaggerShield = IniI("Rage", "StaggerImmune", 1);
 		c.rageZeroStamina	= IniI("Rage", "ZeroStamina", 1);
 		c.rageNpc			= IniI("Rage", "NPCs", 1);
 		c.rageNpcPosture	= IniF("Rage", "NPCPostureTrigger", 0.8f);
@@ -491,8 +497,18 @@ namespace
 		c.wTarget		= IniI("HUD", "Target", 1);
 		c.wIcon			= IniI("HUD", "RageIcon", 1);
 		c.wAnchor		= IniI("HUD", "TargetAnchor", 0);
-		c.wPX			= IniF("HUD", "PlayerX", 1020.0f);
-		c.wPY			= IniF("HUD", "PlayerY", 684.0f);
+		c.wStyle		= IniI("HUD", "BarStyle", 1);
+		c.wPosH			= IniI("HUD", "PlayerPosH", 0);
+		c.wPosV			= IniI("HUD", "PlayerPosV", 2);
+		c.wShiftX		= IniF("HUD", "PlayerShiftX", 120.0f);
+		c.wShiftY		= IniF("HUD", "PlayerShiftY", -117.0f);
+		c.wTPosH		= IniI("HUD", "TargetPosH", 1);
+		c.wTPosV		= IniI("HUD", "TargetPosV", 0);
+		c.wTShiftX		= IniF("HUD", "TargetShiftX", 0.0f);
+		c.wTShiftY		= IniF("HUD", "TargetShiftY", 55.0f);
+		c.wScreenW		= IniF("HUD", "ScreenWidth", 1280.0f);
+		c.wScreenH		= IniF("HUD", "ScreenHeight", 720.0f);
+		c.wPX = 0; c.wPY = 0;
 		c.wPW			= IniF("HUD", "PlayerWidth", 200.0f);
 		c.wPH			= IniF("HUD", "BarHeight", 5.0f);
 		c.wTOffX		= IniF("HUD", "TargetOffsetX", 0.0f);
@@ -832,16 +848,23 @@ namespace
 		}
 	}
 
+	// ---- escudo de stagger (furia): filtra os pedidos de reacao a golpe enviados ao grafo de animacao
+	volatile LONG	g_shieldBlocked = 0;
+	volatile LONG	g_ownNotify = 0;		// 1 = chamada vinda do proprio mod (nunca filtrar)
+	void EnsureNotifyHook(TESObjectREFR * ref);
 	bool CallNotify(void * holder, void * fn, const BSFixedString * name, bool * result)
 	{
 		__try
 		{
 			typedef bool (__thiscall * NotifyFn)(void *, const BSFixedString *);
+			InterlockedExchange(&g_ownNotify, 1);
 			*result = ((NotifyFn)fn)(holder, name);
+			InterlockedExchange(&g_ownNotify, 0);
 			return true;
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER)
 		{
+			InterlockedExchange(&g_ownNotify, 0);
 			return false;
 		}
 	}
@@ -1328,6 +1351,7 @@ namespace
 	void SendRageEvent(TESObjectREFR * ref, float seconds)
 	{
 		if(!ref) return;
+		EnsureNotifyHook(ref);
 		EventDispatcher<PoiseModEvent> * d = NULL;
 		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
 		if(!d) return;
@@ -1373,8 +1397,8 @@ namespace
 		const DWORD latCount = g_latCount, latSum = g_latSum, latMax = g_latMax;
 		const size_t tracked = g_states.size();
 		Unlock();
-		_MESSAGE("SUMMARY: hits=%d applied=%d poiseBreaks=%d postureBreaks=%d light=%d medium=%d parries=%d rages=%d | events sent=%d acked=%d pending=%d | script started=%d | latency avg=%d ms max=%d ms (n=%d) | tracked=%d faults=%d | truehud=%s",
-			(int)g_hits, (int)g_applied, (int)g_breaks, (int)g_postureBreaks, (int)g_lightSent, (int)g_mediumSent, (int)g_parries, (int)g_rages, (int)g_sent, (int)g_acks, (int)(g_sent - g_acks), (int)g_scriptReady,
+		_MESSAGE("SUMMARY: hits=%d applied=%d poiseBreaks=%d postureBreaks=%d light=%d medium=%d parries=%d rages=%d | shield blocked=%d | events sent=%d acked=%d pending=%d | script started=%d | latency avg=%d ms max=%d ms (n=%d) | tracked=%d faults=%d | truehud=%s",
+			(int)g_hits, (int)g_applied, (int)g_breaks, (int)g_postureBreaks, (int)g_lightSent, (int)g_mediumSent, (int)g_parries, (int)g_rages, (int)g_shieldBlocked, (int)g_sent, (int)g_acks, (int)(g_sent - g_acks), (int)g_scriptReady,
 			latCount ? (int)(latSum / latCount) : 0, (int)latMax, (int)latCount, (int)tracked, (int)g_faults, g_hud ? "on" : "off");
 		if(g_sent > 0 && g_acks == 0)
 			_MESSAGE("WARNING: stagger events were sent but the Papyrus script never answered. The script is not running or the mod event was not registered (is NahIDWin.esp enabled? is the .pex installed?)");
@@ -1990,6 +2014,89 @@ namespace
 		if(!g_hdInstalled) g_hdInstalled = (a || c || p);
 	}
 
+
+	// ------------------------------------------------------------------ escudo de stagger
+	// O jogo pede a reacao a um golpe ao grafo de animacao (staggerStart, recoilStart...). Durante a furia (jogador e NPCs)
+	// esses pedidos sao ignorados. Os nossos proprios pedidos (g_ownNotify) passam sempre. A funcao original fica encadeada.
+	struct NotifyHookEntry { void ** vtbl; void * orig; };
+	NotifyHookEntry g_nh[8];
+	int				g_nhCount = 0;
+	typedef bool (__thiscall * NotifyFnT)(void *, const BSFixedString *);
+
+	void * FindNotifyOrig(void ** vtbl)
+	{
+		for(int i = 0; i < g_nhCount; i++) if(g_nh[i].vtbl == vtbl) return g_nh[i].orig;
+		return NULL;
+	}
+
+	bool IsRagingId(UInt32 id)
+	{
+		const DWORD now = GetTickCount();
+		bool r = false;
+		Lock();
+		StateMap::iterator it = g_states.find(id);
+		if(it != g_states.end() && now < it->second.rageUntil) r = true;
+		Unlock();
+		return r;
+	}
+
+	// Pedido de reacao a golpe? (comeca por stagger/recoil e nao e de paragem)
+	bool IsHitReactionName(const char * n)
+	{
+		if(!n) return false;
+		if(_strnicmp(n, "stagger", 7) != 0 && _strnicmp(n, "recoil", 6) != 0) return false;
+		if(strstr(n, "Stop") || strstr(n, "stop") || strstr(n, "End") || strstr(n, "Exit")) return false;
+		return true;
+	}
+
+	// Sem objetos com destrutor: pode usar __try.
+	bool ShouldBlockNotify(void * holder, const BSFixedString * evn)
+	{
+		__try
+		{
+			if(g_ownNotify || !g_cfg.rageStaggerShield || !g_cfg.enabled || !g_cfg.rageEnabled) return false;
+			if(!evn || !IsHitReactionName(evn->data)) return false;
+			const UInt32 id = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);	// formID do ator (holder = ator + 0x20)
+			if(!IsRagingId(id)) return false;
+			InterlockedIncrement(&g_shieldBlocked);
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool __fastcall HookNotify(void * holder, void *, const BSFixedString * evn)
+	{
+		void ** vtbl = NULL;
+		__try { vtbl = *(void ***)holder; } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+		void * orig = FindNotifyOrig(vtbl);
+		if(!orig) return false;
+		if(ShouldBlockNotify(holder, evn)) return true;
+		return ((NotifyFnT)orig)(holder, evn);
+	}
+
+	void EnsureNotifyHook(TESObjectREFR * ref)
+	{
+		if(!ref || !g_cfg.rageStaggerShield) return;
+		void * holder = (UInt8 *)ref + 0x20;
+		void ** vtbl = NULL;
+		__try { vtbl = *(void ***)holder; } __except(EXCEPTION_EXECUTE_HANDLER) { return; }
+		if(!vtbl || FindNotifyOrig(vtbl) || g_nhCount >= 8) return;
+		void ** slot = &vtbl[g_cfg.nativeSlot];
+		void * previous = *slot;
+		if(!IsExecutableAddr(previous)) { _MESSAGE("stagger shield: slot not executable, NOT installed"); return; }
+		DWORD protection = 0, ignored = 0;
+		if(!VirtualProtect(slot, sizeof(void *), PAGE_READWRITE, &protection)) return;
+		g_nh[g_nhCount].vtbl = vtbl;
+		g_nh[g_nhCount].orig = previous;
+		g_nhCount++;
+		*slot = (void *)&HookNotify;
+		VirtualProtect(slot, sizeof(void *), protection, &ignored);
+		_MESSAGE("stagger shield: hook installed on table %p (slot %d chained to %p)", vtbl, g_cfg.nativeSlot, previous);
+	}
+
 	// ------------------------------------------------------------------ dificuldade do jogo (vida estilo Sekiro)
 	SettingCollectionMap ** g_gmstColl = (SettingCollectionMap **)0x012E7164;
 
@@ -2032,6 +2139,7 @@ namespace
 		if(!p) return;
 		ActorStats s;
 		if(!ReadActorStats((Actor *)p, &s) || !s.alive) return;
+		EnsureNotifyHook((TESObjectREFR *)p);
 		const DWORD now = GetTickCount();
 		bool ok = false;
 		DWORD left = 0;
@@ -2430,7 +2538,10 @@ namespace
 			pOn = g_cfg.wPlayerAlways || now < g_wActiveUntil;
 		}
 		PutBool(o, "pOn", pOn);
-		PutNum(o, "pX", g_cfg.wPX); PutNum(o, "pY", g_cfg.wPY); PutNum(o, "pW", g_cfg.wPW); PutNum(o, "pH", g_cfg.wPH);
+		PutNum(o, "sw", g_cfg.wScreenW); PutNum(o, "sh", g_cfg.wScreenH); PutNum(o, "style", g_cfg.wStyle);
+		PutNum(o, "pAH", g_cfg.wPosH); PutNum(o, "pAV", g_cfg.wPosV); PutNum(o, "pSX", g_cfg.wShiftX); PutNum(o, "pSY", g_cfg.wShiftY);
+		PutNum(o, "tAH", g_cfg.wTPosH); PutNum(o, "tAV", g_cfg.wTPosV); PutNum(o, "tSX", g_cfg.wTShiftX); PutNum(o, "tSY", g_cfg.wTShiftY);
+		PutNum(o, "pW", g_cfg.wPW); PutNum(o, "pH", g_cfg.wPH);
 		PutNum(o, "pPosture", pi.posture); PutNum(o, "pRageState", pi.rageState); PutNum(o, "pRageFrac", pi.rageFrac);
 
 		BarInfo ti = { 1.0f, 0, 1.0f, false, 0.0f };
@@ -2453,7 +2564,7 @@ namespace
 		PutNum(o, "tAnchor", g_cfg.wAnchor ? 1 : 0);
 		PutNum(o, "tOffX", g_cfg.wTOffX); PutNum(o, "tOffY", g_cfg.wTOffY);
 		PutNum(o, "tW", g_cfg.wTW); PutNum(o, "tH", g_cfg.wTH);
-		PutNum(o, "tFX", g_cfg.wFX); PutNum(o, "tFY", g_cfg.wFY);
+		
 		PutNum(o, "iconMode", g_cfg.wIcon);
 	}
 
@@ -2551,6 +2662,7 @@ namespace
 			case SKSEMessagingInterface::kMessage_NewGame:
 			case SKSEMessagingInterface::kMessage_PostLoadGame:
 				ClearStates(message->type == SKSEMessagingInterface::kMessage_NewGame ? "new game" : "load game");
+				if(Engine::Player()) EnsureNotifyHook((TESObjectREFR *)Engine::Player());
 				ApplyHealthGMST();
 				DumpVtable();
 				SendLoadEvent();
