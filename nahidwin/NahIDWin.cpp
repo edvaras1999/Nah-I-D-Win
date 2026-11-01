@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.11.0 (HUD proprio: barras de postura e furia no jogador e no alvo; visual da furia, diagnostico de quedas; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.12.0 (furia: reducao extra + bonus de dano + imunidade a stagger; HUD fixo; imunidade em golpes fortes; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -241,6 +241,9 @@ namespace
 		float	rageCostPercent;		// percentagem do maximo
 		float	rageDamageReduction;	// % do dano de vida que o jogador deixa de levar durante a furia
 		float	rageNpcDamageReduction;	// idem para NPCs
+		float	rageDamageBonus;		// % de dano a mais que o jogador causa em furia
+		float	rageNpcDamageBonus;		// idem NPCs
+		float	rageLifeCost;			// % da vida maxima (custo em vida)
 		int		rageZeroStamina;		// a estamina do jogador nao desce durante a furia
 		int		rageNpc;				// NPCs ativam sozinhos
 		float	rageNpcPosture;			// ativa quando a postura passa desta fracao
@@ -277,6 +280,7 @@ namespace
 		int		wPlayerAlways;		// 1 = sempre visiveis; 0 = so em combate/furia
 		int		wTarget;			// barras do alvo
 		int		wIcon;				// 1 = icone da furia ativa
+		int		wAnchor;			// 1 = alvo preso a barra de vida do jogo; 0 = posicao fixa
 		float	wPX, wPY, wPW, wPH;	// posicao/tamanho das barras do jogador
 		float	wTOffX, wTOffY, wTW, wTH;	// barras do alvo (relativas ao nome do alvo)
 		float	wFX, wFY;			// posicao se a barra de vida do jogo nao existir
@@ -430,8 +434,11 @@ namespace
 		c.rageCooldown		= IniF("Rage", "CooldownSeconds", 30.0f);
 		c.rageCostType		= IniI("Rage", "CostType", 0);
 		c.rageCostPercent	= IniF("Rage", "CostPercent", 15.0f);
-		c.rageDamageReduction = IniF("Rage", "DamageReductionPercent", 70.0f);
-		c.rageNpcDamageReduction = IniF("Rage", "NPCDamageReductionPercent", 50.0f);
+		c.rageDamageReduction = IniF("Rage", "ExtraReduction", 40.0f);
+		c.rageNpcDamageReduction = IniF("Rage", "NPCExtraReduction", 30.0f);
+		c.rageDamageBonus = IniF("Rage", "DamageBonus", 20.0f);
+		c.rageNpcDamageBonus = IniF("Rage", "NPCDamageBonus", 10.0f);
+		c.rageLifeCost = IniF("Rage", "LifeCostPercent", 20.0f);
 		c.rageZeroStamina	= IniI("Rage", "ZeroStamina", 1);
 		c.rageNpc			= IniI("Rage", "NPCs", 1);
 		c.rageNpcPosture	= IniF("Rage", "NPCPostureTrigger", 0.8f);
@@ -483,6 +490,7 @@ namespace
 		c.wPlayerAlways	= IniI("HUD", "PlayerAlways", 0);
 		c.wTarget		= IniI("HUD", "Target", 1);
 		c.wIcon			= IniI("HUD", "RageIcon", 1);
+		c.wAnchor		= IniI("HUD", "TargetAnchor", 0);
 		c.wPX			= IniF("HUD", "PlayerX", 1020.0f);
 		c.wPY			= IniF("HUD", "PlayerY", 684.0f);
 		c.wPW			= IniF("HUD", "PlayerWidth", 200.0f);
@@ -1881,6 +1889,20 @@ namespace
 						InterlockedIncrement(&g_hdBleed);
 					}
 				}
+				// bonus de dano de quem esta em furia (jogador ou NPC), em armas e magias
+				if(g_cfg.rageEnabled && attacker && attacker != self && attacker->formID != id)
+				{
+					StateMap::iterator ia = g_states.find(attacker->formID);
+					if(ia != g_states.end() && now < ia->second.rageUntil)
+					{
+						float bonus = (attacker->formID == 0x14) ? g_cfg.rageDamageBonus : g_cfg.rageNpcDamageBonus;
+						if(bonus < 0.0f) bonus = 0.0f;
+						if(bonus > 300.0f) bonus = 300.0f;
+						mult *= 1.0f + bonus / 100.0f;
+						if(why[0] == 0) why = "rage bonus";
+						InterlockedIncrement(&g_hdRage);
+					}
+				}
 				Unlock();
 				result = amount * mult;
 			}
@@ -2035,14 +2057,14 @@ namespace
 		const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
 		if(ReadAV((Actor *)p, av, &cur, &m))
 		{
-			cost = m * g_cfg.rageCostPercent / 100.0f;
+			cost = m * (av == 24 ? g_cfg.rageLifeCost : g_cfg.rageCostPercent) / 100.0f;
 			if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
 			if(cost < 0.0f) cost = 0.0f;
 			g_rageCostBusy = 1;
 			if(cost > 0.0f) RestoreAV((Actor *)p, av, -cost);
 			g_rageCostBusy = 0;
 		}
-		_MESSAGE("RAGE (player): active for %.1f s, damage reduction %.0f%%, cost %.1f %s", g_cfg.rageSeconds, g_cfg.rageDamageReduction, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
+		_MESSAGE("RAGE (player): active for %.1f s, extra reduction %.0f%%, damage bonus %.0f%%, cost %.1f %s", g_cfg.rageSeconds, g_cfg.rageDamageReduction, g_cfg.rageDamageBonus, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
 		HudFlash((TESObjectREFR *)p);
 		SendRageEvent((TESObjectREFR *)p, g_cfg.rageSeconds);
 	}
@@ -2396,7 +2418,7 @@ namespace
 	void FillHudData(GFxValue * o)
 	{
 		const DWORD now = GetTickCount();
-		const bool ready = g_cfg.wEnabled && g_dataLoaded && Engine::Player();
+		const bool ready = g_cfg.wEnabled && g_dataLoaded && Engine::Player() && !AnyMenuOpen();
 		PutBool(o, "ready", ready);
 		if(!ready) return;
 
@@ -2428,7 +2450,7 @@ namespace
 		}
 		PutBool(o, "tOn", tOn);
 		PutNum(o, "tPosture", ti.posture); PutNum(o, "tRageState", ti.rageState); PutNum(o, "tRageFrac", ti.rageFrac);
-		PutNum(o, "tAnchor", 1);
+		PutNum(o, "tAnchor", g_cfg.wAnchor ? 1 : 0);
 		PutNum(o, "tOffX", g_cfg.wTOffX); PutNum(o, "tOffY", g_cfg.wTOffY);
 		PutNum(o, "tW", g_cfg.wTW); PutNum(o, "tH", g_cfg.wTH);
 		PutNum(o, "tFX", g_cfg.wFX); PutNum(o, "tFY", g_cfg.wFY);

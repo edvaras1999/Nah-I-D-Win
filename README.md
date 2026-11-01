@@ -80,3 +80,11 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - HUD do alvo: se nao ha lock-on usa o alvo debaixo da mira (crosshair); se a barra de vida do jogo estiver escondida (TrueHUD) usa a posicao fixa `TargetFallbackX/Y`. Log: `hud widget: target ...`.
 - Bridge: re-regista eventos de mod/animacao a cada load (saves antigos nao tinham o evento da furia); log `bridge 0.11.0: ...`.
 - O custo de vida da furia deixou de ser reduzido pela propria furia.
+
+## v0.12.0
+
+- **Furia**: reducao extra de dano (25-50%, por cima de toda a resistencia; so afeta o dano que ainda chega a vida), bonus de dano (10-30%, armas e magias), custo em vida 10-30% (omissao 20%), imunidade a stagger durante a furia (jogador e NPCs). Chaves novas no `.ini` `[Rage]`: `LifeCostPercent`, `ExtraReduction`, `NPCExtraReduction`, `DamageBonus`, `NPCDamageBonus`, `StaggerImmune` (as antigas `DamageReductionPercent` deixam de ser usadas).
+- **Golpes fortes**: o jogador nao leva stagger durante `[Stagger] PowerAttackImmuneSeconds` (2 s) depois de iniciar um golpe forte.
+- **HUD**: barras do alvo em posicao fixa por defeito (`TargetAnchor=0`); escondem-se com qualquer menu aberto.
+- Diagnostico: mais eventos de animacao no log (`PLAYER ANIM`).
+- Por fazer: modo manual com aura de fogo (G liga/desliga, 10 s, 2%/s de vida, animacao via DAR).

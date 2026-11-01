@@ -61,6 +61,16 @@ Function RegisterInputs()
 		RegisterForAnimationEvent(pl, "bleedOutStart")
 		RegisterForAnimationEvent(pl, "KnockDown")
 		RegisterForAnimationEvent(pl, "ragdollStart")
+		RegisterForAnimationEvent(pl, "recoilStop")
+		RegisterForAnimationEvent(pl, "staggerStop")
+		RegisterForAnimationEvent(pl, "attackStop")
+		RegisterForAnimationEvent(pl, "attackStart")
+		RegisterForAnimationEvent(pl, "attackRelease")
+		RegisterForAnimationEvent(pl, "attackPowerStartForwardLeftHand")
+		RegisterForAnimationEvent(pl, "SneakStop")
+		RegisterForAnimationEvent(pl, "ragdollEnd")
+		RegisterForAnimationEvent(pl, "GetUpStart")
+		RegisterForAnimationEvent(pl, "GetUpEnd")
 		ApplyRegen()
 	endif
 EndFunction
@@ -79,26 +89,37 @@ Function OnPlayerStagger()
 	RegisterForSingleUpdate(win)
 EndFunction
 
+; Golpe forte (carregado ou nao): o jogador nao e travado por stagger enquanto ataca.
+; [Stagger] PowerAttackImmuneSeconds no .ini (0 = desligado).
+Function OnPlayerPowerAttack()
+	float win = NahIDWinNative.IniGetF("Stagger", "PowerAttackImmuneSeconds", 2.0)
+	if win <= 0.0
+		return
+	endif
+	sNoStagger = true
+	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", true)
+	RegisterForSingleUpdate(win)
+EndFunction
+
 Event OnUpdate()
 	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", false)
 	sNoStagger = false
 EndEvent
 
-; Furia de um NPC: brilho e/ou simbolo vermelho durante a furia. [Rage] NPCVisual: 0 nada, 1 brilho, 2 simbolo, 3 os dois.
+; Furia (jogador e NPC): imunidade a stagger durante a furia + brilho e/ou simbolo vermelho.
+; [Rage] StaggerImmune: 1 = ligado. [Rage] NPCVisual / PlayerVisual: 0 nada, 1 brilho, 2 simbolo, 3 os dois.
 Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	Actor a = sender as Actor
 	if !a
 		return
 	endif
-	int mode = NahIDWinNative.IniGetF("Rage", "NPCVisual", 1.0) as int
-	if mode <= 0
-		return
+	bool imm = NahIDWinNative.IniGetF("Rage", "StaggerImmune", 1.0) > 0.5
+	if imm
+		a.SetAnimationVariableBool("bNoStagger", true)
 	endif
+	int mode = NahIDWinNative.IniGetF("Rage", "NPCVisual", 1.0) as int
 	if a == Game.GetPlayer()
 		mode = NahIDWinNative.IniGetF("Rage", "PlayerVisual", 1.0) as int
-		if mode <= 0
-			return
-		endif
 	endif
 	Spell glow = None
 	Spell symbol = None
@@ -116,7 +137,7 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if symbol
 		ss = "ok"
 	endif
-	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss)
+	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss + " staggerImmune " + imm)
 	if glow
 		glow.Cast(a, a)
 	endif
@@ -130,25 +151,27 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if symbol
 		a.DispelSpell(symbol)
 	endif
-EndFunction
-
-; Regeneracao de estamina do jogador conforme a armadura (100 = normal).
-Function ApplyRegen()
-	float r = NahIDWinNative.GetRegenPercent()
-	if r > 0.0
-		Game.GetPlayer().SetActorValue("StaminaRateMult", r)
+	if imm
+		a.SetAnimationVariableBool("bNoStagger", false)
 	endif
 EndFunction
 
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
 Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
+	if asEventName == "recoilStop" || asEventName == "staggerStop" || asEventName == "attackStop" || asEventName == "attackStart" || asEventName == "attackRelease" || asEventName == "SneakStop" || asEventName == "ragdollEnd" || asEventName == "GetUpStart" || asEventName == "GetUpEnd"
+		NahIDWinNative.Log("PLAYER ANIM: " + asEventName)
+		return
+	endif
 	if asEventName == "staggerStart" || asEventName == "recoilStart" || asEventName == "recoilLargeStart" || asEventName == "bleedOutStart" || asEventName == "KnockDown" || asEventName == "ragdollStart"
 		NahIDWinNative.Log("PLAYER ANIM: " + asEventName + " (stamina " + pl.GetActorValue("Stamina") + ")")
 		if asEventName == "staggerStart"
 			OnPlayerStagger()
 		endif
 		return
+	endif
+	if asEventName != "weaponSwing" && asEventName != "weaponLeftSwing" && asEventName != "bashStart"
+		OnPlayerPowerAttack()
 	endif
 	int mode = 0
 	if asEventName == "bashStart" || asEventName == "bashPowerStart"

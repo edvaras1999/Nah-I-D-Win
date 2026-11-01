@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 21
+	return 22
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 3
+	if count > 0 && tableRev == 4
 		return
 	endif
-	tableRev = 3
+	tableRev = 4
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -524,9 +524,12 @@ Function BuildTable()
 	AddSetting(3, 0, "Rage", "DurationSeconds", "Duracao da furia (s)", "Rage duration (s)", "Tempo de imunidade.", "How long rage lasts.", 1.0, 20.0, 0.5, 5.0)
 	AddSetting(3, 0, "Rage", "CooldownSeconds", "Recarga da furia (s)", "Rage cooldown (s)", "Tempo ate poderes usar outra vez.", "Time until you can use it again.", 5.0, 180.0, 5.0, 30.0)
 	AddSetting(3, 0, "Rage", "CostType", "Custo: 0 vida, 1 estamina", "Cost: 0 health, 1 stamina", "Com o que pagas a furia.", "What you pay the rage with.", 0.0, 1.0, 1.0, 0.0)
-	AddSetting(3, 0, "Rage", "CostPercent", "Custo (% do maximo)", "Cost (% of max)", "Percentagem do maximo que a furia custa. A vida nunca te mata.", "Percent of max that rage costs. Health never kills you.", 0.0, 60.0, 1.0, 15.0)
-	AddSetting(3, 0, "Rage", "DamageReductionPercent", "Reducao de dano - jogador (%)", "Player damage reduction (%)", "Reducao do dano de vida enquanto o jogador esta em furia.", "Health damage reduction while the player is raging.", 0.0, 95.0, 5.0, 70.0)
-	AddSetting(3, 0, "Rage", "NPCDamageReductionPercent", "Reducao de dano - NPC (%)", "NPC damage reduction (%)", "Reducao do dano de vida enquanto um NPC esta em furia.", "Health damage reduction while an NPC is raging.", 0.0, 95.0, 5.0, 50.0)
+	AddSetting(3, 0, "Rage", "LifeCostPercent", "Custo da furia (% da vida)", "Rage cost (% of health)", "Percentagem da vida maxima que a furia custa. Nunca te mata.", "Percent of max health rage costs. Never kills you.", 10.0, 30.0, 1.0, 20.0)
+	AddSetting(3, 0, "Rage", "ExtraReduction", "Reducao extra de dano - jogador (%)", "Extra damage reduction - player (%)", "Reduz o dano que ainda chega a vida (bloqueado ou nao), por cima de toda a resistencia.", "Cuts the damage that still reaches health (blocked or not), on top of all resistance.", 25.0, 50.0, 1.0, 40.0)
+	AddSetting(3, 0, "Rage", "DamageBonus", "Aumento de dano - jogador (%)", "Damage bonus - player (%)", "Aumenta o dano final das tuas armas e magias durante a furia.", "Raises the final damage of your weapons and spells during rage.", 10.0, 30.0, 1.0, 20.0)
+	AddSetting(3, 1, "Rage", "StaggerImmune", "Imunidade a stagger durante a furia", "Stagger immunity during rage", "Jogador e NPCs nao sao travados enquanto a furia durar.", "Player and NPCs are not staggered while rage lasts.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(3, 0, "Rage", "NPCExtraReduction", "Reducao extra de dano - NPC (%)", "Extra damage reduction - NPC (%)", "Igual, para os NPCs.", "Same, for NPCs.", 25.0, 50.0, 1.0, 30.0)
+	AddSetting(3, 0, "Rage", "NPCDamageBonus", "Aumento de dano - NPC (%)", "Damage bonus - NPC (%)", "Aumenta o dano final dos NPCs em furia.", "Raises the final damage of NPCs in rage.", 10.0, 30.0, 1.0, 10.0)
 	AddSetting(3, 1, "Rage", "ZeroStamina", "Furia sem custo de estamina", "Zero stamina cost in rage", "Durante a furia os golpes nao gastam estamina (so vida).", "During rage your swings cost no stamina (only health).", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(3, 0, "Rage", "NPCVisual", "Visual da furia dos NPCs", "NPC rage visual", "0 = nenhum, 1 = brilho, 2 = simbolo vermelho, 3 = os dois.", "0 = none, 1 = glow, 2 = red symbol, 3 = both.", 0.0, 3.0, 1.0, 1.0)
 	AddSetting(3, 0, "Rage", "PlayerVisual", "Visual da furia do jogador", "Player rage visual", "0 = nenhum, 1 = brilho, 2 = simbolo vermelho, 3 = os dois.", "0 = none, 1 = glow, 2 = red symbol, 3 = both.", 0.0, 3.0, 1.0, 1.0)
@@ -552,6 +555,7 @@ Function BuildTable()
 	AddSetting(7, 0, "Stagger", "LightCooldownMs", "Espaco do stagger leve - NPCs (ms)", "Light stagger spacing - NPCs (ms)", "Tempo minimo entre dois staggers leves.", "Minimum time between two light staggers.", 100.0, 3000.0, 100.0, 700.0)
 	AddSetting(7, 0, "Stagger", "LightCooldownPlayerMs", "Espaco do stagger leve - jogador (ms)", "Light stagger spacing - player (ms)", "Mais espaco = menos tempo travado a levar golpes.", "More spacing = less time locked while being hit.", 100.0, 5000.0, 100.0, 1500.0)
 	AddSetting(7, 0, "Stagger", "PlayerImmuneAfterSeconds", "Imunidade do jogador apos stagger (s)", "Player immunity after stagger (s)", "Depois de levares um stagger do jogo, ficas este tempo sem o levar de novo (para bloquear ou esquivar). 0 = desligado. Staggers pesados do mod passam sempre.", "After the game staggers you, you cannot be staggered again for this long (to block or dodge). 0 = off. The mod heavy staggers always go through.", 0.0, 5.0, 0.1, 1.5)
+	AddSetting(7, 0, "Stagger", "PowerAttackImmuneSeconds", "Imunidade em golpes fortes (s)", "Immunity during power attacks (s)", "O jogador nao e travado por stagger durante este tempo depois de iniciar um golpe forte. 0 = desligado.", "The player is not staggered for this long after starting a power attack. 0 = off.", 0.0, 5.0, 0.5, 2.0)
 	AddSetting(7, 1, "Stagger", "MediumOnPowerAttack", "Stagger medio em golpe forte", "Medium stagger on power attack", "Golpe forte ou de escudo sem bloquear da stagger medio.", "An unblocked power attack or bash causes a medium stagger.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 1, "Knockback", "Enabled", "Empurrao ligado", "Knockback enabled", "Empurrao no stagger pesado, so em condicoes especificas.", "Knockback on heavy stagger, only in specific conditions.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 0, "Knockback", "Force", "Forca do empurrao", "Knockback force", "0 = sem empurrao.", "0 = no knockback.", 0.0, 5.0, 0.1, 1.0)
@@ -585,6 +589,9 @@ Function BuildTable()
 	AddSetting(13, 1, "HUD", "Enabled", "Barras proprias (postura e furia)", "Own bars (posture and rage)", "Mostra a postura e a furia do jogador e do alvo. Precisa do NahIDWinHUD.swf em Data/Interface.", "Shows posture and rage for the player and the target. Needs NahIDWinHUD.swf in Data/Interface.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "Player", "Barras do jogador", "Player bars", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "PlayerAlways", "Barras do jogador sempre visiveis", "Player bars always visible", "Desligado = so aparecem em combate ou com a furia ativa.", "Off = only shown in combat or while rage is active.", 0.0, 1.0, 1.0, 0.0)
+	AddSetting(13, 1, "HUD", "TargetAnchor", "Alvo: seguir a barra de vida do jogo", "Target: follow the game health bar", "Desligado = posicao fixa (TargetFallbackX/Y). Ligado = por baixo do nome do inimigo.", "Off = fixed position (TargetFallbackX/Y). On = under the enemy name.", 0.0, 1.0, 1.0, 0.0)
+	AddSetting(13, 0, "HUD", "TargetFallbackX", "Alvo: posicao X (fixa)", "Target: X position (fixed)", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 1280.0, 5.0, 540.0)
+	AddSetting(13, 0, "HUD", "TargetFallbackY", "Alvo: posicao Y (fixa)", "Target: Y position (fixed)", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 720.0, 2.0, 60.0)
 	AddSetting(13, 1, "HUD", "Target", "Barras do alvo (mira)", "Target bars (lock-on)", "Mostra por baixo da barra de vida do inimigo que esta na mira.", "Shown under the health bar of the locked-on enemy.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "RageIcon", "Icone da furia ativa", "Active rage icon", "Losango piscante ao lado das barras quando a furia esta ativa.", "Flashing diamond next to the bars while rage is active.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 0, "HUD", "PlayerX", "Jogador: posicao X", "Player: X position", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 1280.0, 5.0, 1020.0)
