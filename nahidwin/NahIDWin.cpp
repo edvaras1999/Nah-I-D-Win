@@ -1836,9 +1836,10 @@ namespace
 	bool			g_hdInstalled = false;
 
 	// amount < 0 = dano. Devolve o dano ajustado. Sem objetos com destrutor: pode usar __try.
+	volatile LONG g_rageCostBusy = 0;	// o custo de vida da furia nao e reduzido pela propria furia
 	float AdjustHealthDamage(Actor * self, Actor * attacker, float amount)
 	{
-		if(!(amount < 0.0f) || !(amount > -1.0e9f) || !g_cfg.enabled) return amount;
+		if(!(amount < 0.0f) || !(amount > -1.0e9f) || !g_cfg.enabled || g_rageCostBusy) return amount;
 		__try
 		{
 			if(!self || self->formType != kFormType_Character) return amount;
@@ -2037,7 +2038,9 @@ namespace
 			cost = m * g_cfg.rageCostPercent / 100.0f;
 			if(av == 24 && cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
 			if(cost < 0.0f) cost = 0.0f;
+			g_rageCostBusy = 1;
 			if(cost > 0.0f) RestoreAV((Actor *)p, av, -cost);
+			g_rageCostBusy = 0;
 		}
 		_MESSAGE("RAGE (player): active for %.1f s, damage reduction %.0f%%, cost %.1f %s", g_cfg.rageSeconds, g_cfg.rageDamageReduction, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
 		HudFlash((TESObjectREFR *)p);
@@ -2336,22 +2339,42 @@ namespace
 		return true;
 	}
 
-	// Alvo atual da mira do jogador (o mesmo da barra de vida do inimigo). Sem objetos com destrutor.
-	Actor * LockOnTarget(UInt32 * outHandle)
+	// Ator de um handle (so usado de imediato, na mesma chamada do SWF). Sem objetos com destrutor.
+	Actor * ActorFromHandle(UInt32 h)
 	{
 		__try
 		{
-			PlayerCharacter * pc = Engine::Player();
-			if(!pc) return NULL;
-			UInt32 h = pc->targetHandle;
 			if(h == 0 || h == 0x00100000 || h == 0xFFFFFFFF) return NULL;
 			TESObjectREFR * ref = NULL;
 			if(!LookupREFRByHandle(&h, &ref) || !ref) return NULL;
 			Actor * res = NULL;
 			if(ref->formType == kFormType_Character) res = (Actor *)ref;
 			ref->handleRefObject.DecRefHandle();	// a procura incrementa a contagem
-			*outHandle = h;
-			return res;		// so usado de imediato, na mesma chamada do SWF (o jogo mantem o ator vivo no alvo)
+			return res;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return NULL;
+		}
+	}
+
+	// Alvo atual: o da mira/lock-on do jogo; se nao houver, o que esta debaixo da mira (crosshair).
+	Actor * CurrentTarget(int * how)
+	{
+		__try
+		{
+			*how = 0;
+			PlayerCharacter * pc = Engine::Player();
+			if(!pc) return NULL;
+			Actor * t = ActorFromHandle(pc->targetHandle);
+			if(t) { *how = 1; return t; }
+			CrosshairRefHandleHolder * ch = CrosshairRefHandleHolder::GetSingleton();
+			if(ch)
+			{
+				t = ActorFromHandle(ch->CrosshairRefHandle());
+				if(t) { *how = 2; return t; }
+			}
+			return NULL;
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -2392,9 +2415,16 @@ namespace
 		bool tOn = false;
 		if(g_cfg.wTarget)
 		{
-			UInt32 th = 0;
-			Actor * t = LockOnTarget(&th);
+			int how = 0;
+			Actor * t = CurrentTarget(&how);
 			if(t && (UInt32)t->formID != 0x14) tOn = BarForActor(t, &ti);
+			static UInt32 lastId = 0xFFFFFFFF; static int logged = 0;
+			const UInt32 nowId = (t && tOn) ? (UInt32)t->formID : 0;
+			if(nowId != lastId)
+			{
+				lastId = nowId;
+				if(logged < 40) { logged++; _MESSAGE("hud widget: target %08X (%s)", nowId, nowId ? (how == 1 ? "lock-on" : "crosshair") : "none"); }
+			}
 		}
 		PutBool(o, "tOn", tOn);
 		PutNum(o, "tPosture", ti.posture); PutNum(o, "tRageState", ti.rageState); PutNum(o, "tRageFrac", ti.rageFrac);

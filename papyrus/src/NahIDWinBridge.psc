@@ -24,7 +24,12 @@ EndEvent
 
 ; A DLL avisa quando um save e carregado: os registos de animacao perdem-se, entao registamos de novo.
 Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
+	; saves antigos nao tem os registos novos (OnInit so corre em jogos novos): registamos sempre
+	RegisterForModEvent("NahIDWin_Stagger", "OnNahStagger")
+	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
+	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
 	RegisterInputs()
+	NahIDWinNative.Log("bridge 0.11.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()

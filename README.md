@@ -74,3 +74,9 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Nova seccao `[HUD]` no .ini e bloco "HUD (barras proprias)" no menu (Advanced).
 - Fase 2 (por fazer): alvo por raio em volta da mira quando nao ha lock-on.
 - Log: procura `scaleform interface: NahIDWinHUD registered` e `hud widget: NahIDWinHUD.swf load requested (ok)`.
+
+### v0.11.0 (correcoes apos o primeiro teste)
+- Menu: a tabela de opcoes antiga ficava guardada no save e a seccao "HUD (own bars)" aparecia vazia. Agora a tabela e refeita quando muda a revisao.
+- HUD do alvo: se nao ha lock-on usa o alvo debaixo da mira (crosshair); se a barra de vida do jogo estiver escondida (TrueHUD) usa a posicao fixa `TargetFallbackX/Y`. Log: `hud widget: target ...`.
+- Bridge: re-regista eventos de mod/animacao a cada load (saves antigos nao tinham o evento da furia); log `bridge 0.11.0: ...`.
+- O custo de vida da furia deixou de ser reduzido pela propria furia.

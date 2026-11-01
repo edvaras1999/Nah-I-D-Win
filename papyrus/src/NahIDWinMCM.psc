@@ -75,6 +75,7 @@ float[] sMax
 float[] sStep
 float[] sDef
 int count
+int tableRev
 
 ; ---------------- opcoes desenhadas na pagina ----------------
 ; tipos: 1 interruptor MOD, 2 toggle do .ini, 3 slider do .ini, 4 toggle global, 5 slider global, 6 menu
@@ -482,9 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0
+	if count > 0 && tableRev == 3
 		return
 	endif
+	tableRev = 3
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
