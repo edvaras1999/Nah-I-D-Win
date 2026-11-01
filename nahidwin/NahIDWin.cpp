@@ -2421,15 +2421,21 @@ namespace
 		return true;
 	}
 
+	// Funcao interna com objetos (GFxValue tem destrutor): sem __try aqui.
+	bool LoadHudInner(GFxMovieView * v)
+	{
+		GFxValue c;
+		if(v->GetVariable(&c, "_root.NahIDWinContainer") && c.GetType() != GFxValue::kType_Undefined) return true;	// ja carregado
+		v->Invoke("_root.createEmptyMovieClip", NULL, "%s%d", "NahIDWinContainer", 9400);
+		v->Invoke("_root.NahIDWinContainer.loadMovie", NULL, "%s", "NahIDWinHUD.swf");
+		return true;
+	}
+
 	bool InvokeLoadHud(GFxMovieView * v)
 	{
 		__try
 		{
-			GFxValue c;
-			if(v->GetVariable(&c, "_root.NahIDWinContainer") && c.GetType() != GFxValue::kType_Undefined) return true;	// ja carregado
-			v->Invoke("_root.createEmptyMovieClip", NULL, "%s%d", "NahIDWinContainer", 9400);
-			v->Invoke("_root.NahIDWinContainer.loadMovie", NULL, "%s", "NahIDWinHUD.swf");
-			return true;
+			return LoadHudInner(v);
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER)
 		{
