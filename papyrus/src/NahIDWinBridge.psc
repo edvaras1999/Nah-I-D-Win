@@ -50,6 +50,12 @@ Function RegisterInputs()
 		RegisterForAnimationEvent(pl, "attackPowerStartRight")
 		RegisterForAnimationEvent(pl, "attackPowerStartDualWield")
 		RegisterForAnimationEvent(pl, "staggerStart")
+		; so para o diagnostico das quedas do jogador (so escrevem no log)
+		RegisterForAnimationEvent(pl, "recoilStart")
+		RegisterForAnimationEvent(pl, "recoilLargeStart")
+		RegisterForAnimationEvent(pl, "bleedOutStart")
+		RegisterForAnimationEvent(pl, "KnockDown")
+		RegisterForAnimationEvent(pl, "ragdollStart")
 		ApplyRegen()
 	endif
 EndFunction
@@ -83,6 +89,12 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if mode <= 0
 		return
 	endif
+	if a == Game.GetPlayer()
+		mode = NahIDWinNative.IniGetF("Rage", "PlayerVisual", 1.0) as int
+		if mode <= 0
+			return
+		endif
+	endif
 	Spell glow = None
 	Spell symbol = None
 	if mode == 1 || mode == 3
@@ -91,6 +103,15 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if mode == 2 || mode == 3
 		symbol = Game.GetFormFromFile(0x00000843, "NahIDWin.esp") as Spell
 	endif
+	string gs = "MISSING"
+	string ss = "MISSING"
+	if glow
+		gs = "ok"
+	endif
+	if symbol
+		ss = "ok"
+	endif
+	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss)
 	if glow
 		glow.Cast(a, a)
 	endif
@@ -117,8 +138,11 @@ EndFunction
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
 Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
-	if asEventName == "staggerStart"
-		OnPlayerStagger()
+	if asEventName == "staggerStart" || asEventName == "recoilStart" || asEventName == "recoilLargeStart" || asEventName == "bleedOutStart" || asEventName == "KnockDown" || asEventName == "ragdollStart"
+		NahIDWinNative.Log("PLAYER ANIM: " + asEventName + " (stamina " + pl.GetActorValue("Stamina") + ")")
+		if asEventName == "staggerStart"
+			OnPlayerStagger()
+		endif
 		return
 	endif
 	int mode = 0

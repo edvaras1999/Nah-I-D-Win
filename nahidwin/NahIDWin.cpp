@@ -57,7 +57,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.10.1 (visual da furia, imunidade de stagger do jogador; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.10.2 (visual da furia no jogador, diagnostico de quedas; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -2016,6 +2016,7 @@ namespace
 		}
 		_MESSAGE("RAGE (player): active for %.1f s, damage reduction %.0f%%, cost %.1f %s", g_cfg.rageSeconds, g_cfg.rageDamageReduction, cost, g_cfg.rageCostType == 0 ? "health" : "stamina");
 		HudFlash((TESObjectREFR *)p);
+		SendRageEvent((TESObjectREFR *)p, g_cfg.rageSeconds);
 	}
 
 	bool PlayerRaging()
