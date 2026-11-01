@@ -91,7 +91,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 20
+	return 21
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -580,6 +580,15 @@ Function BuildTable()
 	AddSetting(10, 1, "TrueHUD", "FlashOnBreak", "Barra pisca ao quebrar", "Bar flashes on break", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "General", "Player", "Poise e postura no jogador", "Poise and posture on player", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "General", "NPCs", "Poise e postura nos NPCs", "Poise and posture on NPCs", "", "", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 1, "HUD", "Enabled", "Barras proprias (postura e furia)", "Own bars (posture and rage)", "Mostra a postura e a furia do jogador e do alvo. Precisa do NahIDWinHUD.swf em Data/Interface.", "Shows posture and rage for the player and the target. Needs NahIDWinHUD.swf in Data/Interface.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 1, "HUD", "Player", "Barras do jogador", "Player bars", "", "", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 1, "HUD", "PlayerAlways", "Barras do jogador sempre visiveis", "Player bars always visible", "Desligado = so aparecem em combate ou com a furia ativa.", "Off = only shown in combat or while rage is active.", 0.0, 1.0, 1.0, 0.0)
+	AddSetting(13, 1, "HUD", "Target", "Barras do alvo (mira)", "Target bars (lock-on)", "Mostra por baixo da barra de vida do inimigo que esta na mira.", "Shown under the health bar of the locked-on enemy.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 1, "HUD", "RageIcon", "Icone da furia ativa", "Active rage icon", "Losango piscante ao lado das barras quando a furia esta ativa.", "Flashing diamond next to the bars while rage is active.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 0, "HUD", "PlayerX", "Jogador: posicao X", "Player: X position", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 1280.0, 5.0, 1020.0)
+	AddSetting(13, 0, "HUD", "PlayerY", "Jogador: posicao Y", "Player: Y position", "Pixeis do HUD (ecra 1280x720).", "HUD pixels (1280x720 screen).", 0.0, 720.0, 2.0, 684.0)
+	AddSetting(13, 0, "HUD", "PlayerWidth", "Jogador: largura", "Player: width", "", "", 50.0, 600.0, 5.0, 200.0)
+	AddSetting(13, 0, "HUD", "TargetOffsetY", "Alvo: distancia abaixo do nome", "Target: distance below name", "Aumenta para descer as barras do alvo.", "Increase to move the target bars down.", -60.0, 120.0, 2.0, 22.0)
 	AddSetting(11, 1, "Diagnostics", "Enabled", "Diagnostico no log", "Diagnostics in log", "Escreve o que acontece em NahIDWin.log.", "Writes what happens to NahIDWin.log.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "Diagnostics", "LogPlayerEvents", "Registar eventos que afetam o jogador", "Log events hitting the player", "Ajuda a descobrir a queda a meio dos combos.", "Helps find the fall during combos.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(12, 1, "Block", "DrainEnabled", "Bloqueio gasta estamina do atacante", "Block drains attacker stamina", "Bloqueio normal (sem parry) gasta estamina do atacante. Sem stagger.", "Normal block (no parry) drains the attacker's stamina. No stagger.", 0.0, 1.0, 1.0, 1.0)
@@ -775,6 +784,7 @@ Function DrawPage2()
 	SetCursorPosition(1)
 	DrawBlock(12, "Normal block (ours)", "Bloqueio normal (nosso)")
 	DrawBlock(10, "HUD (TrueHUD bar)", "HUD (barra do TrueHUD)")
+	DrawBlock(13, "HUD (own bars)", "HUD (barras proprias)")
 	DrawBlock(11, "System", "Sistema")
 EndFunction
 

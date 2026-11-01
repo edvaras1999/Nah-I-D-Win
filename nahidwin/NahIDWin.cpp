@@ -42,6 +42,7 @@
 #include "skse/NiTypes.h"
 #include "skse/NiObjects.h"
 #include "skse/ScaleformMovie.h"
+#include "skse/ScaleformCallbacks.h"
 #include "skse/PapyrusVM.h"
 #include "skse/PapyrusNativeFunctions.h"
 #include "Log.h"
@@ -57,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.10.2 (visual da furia no jogador, diagnostico de quedas; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.11.0 (HUD proprio: barras de postura e furia no jogador e no alvo; visual da furia, diagnostico de quedas; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -270,6 +271,15 @@ namespace
 		int		hudPlayer;			// mostrar a barra tambem para o jogador
 		int		hudFlash;			// piscar a barra quando algo quebra
 		int		hudBar;				// 0 = barra do poise, 1 = barra da postura, 2 = a mais perto de quebrar
+		// HUD proprio (NahIDWinHUD.swf)
+		int		wEnabled;			// 1 = barras proprias de postura e furia
+		int		wPlayer;			// barras do jogador
+		int		wPlayerAlways;		// 1 = sempre visiveis; 0 = so em combate/furia
+		int		wTarget;			// barras do alvo
+		int		wIcon;				// 1 = icone da furia ativa
+		float	wPX, wPY, wPW, wPH;	// posicao/tamanho das barras do jogador
+		float	wTOffX, wTOffY, wTW, wTH;	// barras do alvo (relativas ao nome do alvo)
+		float	wFX, wFY;			// posicao se a barra de vida do jogo nao existir
 
 		// diagnostico
 		int		diag;				// 1 = diagnostico ligado
@@ -468,6 +478,21 @@ namespace
 		c.healthTaken	= IniF("Health", "TakenMult", 1.0f);
 		c.healthDealt	= IniF("Health", "DealtMult", 1.0f);
 		c.bleedDamageMult = IniF("Health", "BleedOutDamageMult", 1.0f);
+		c.wEnabled		= IniI("HUD", "Enabled", 1);
+		c.wPlayer		= IniI("HUD", "Player", 1);
+		c.wPlayerAlways	= IniI("HUD", "PlayerAlways", 0);
+		c.wTarget		= IniI("HUD", "Target", 1);
+		c.wIcon			= IniI("HUD", "RageIcon", 1);
+		c.wPX			= IniF("HUD", "PlayerX", 1020.0f);
+		c.wPY			= IniF("HUD", "PlayerY", 684.0f);
+		c.wPW			= IniF("HUD", "PlayerWidth", 200.0f);
+		c.wPH			= IniF("HUD", "BarHeight", 5.0f);
+		c.wTOffX		= IniF("HUD", "TargetOffsetX", 0.0f);
+		c.wTOffY		= IniF("HUD", "TargetOffsetY", 22.0f);
+		c.wTW			= IniF("HUD", "TargetWidth", 0.0f);
+		c.wTH			= IniF("HUD", "TargetBarHeight", 5.0f);
+		c.wFX			= IniF("HUD", "TargetFallbackX", 540.0f);
+		c.wFY			= IniF("HUD", "TargetFallbackY", 60.0f);
 		c.bar2X			= IniF("TrueHUD", "SecondBarX", 490.0f);
 		c.bar2Y			= IniF("TrueHUD", "SecondBarY", 640.0f);
 		c.bar2W			= IniF("TrueHUD", "SecondBarWidth", 300.0f);
@@ -2282,6 +2307,163 @@ namespace
 		return true;
 	}
 
+	// ------------------------------------------------------------------ HUD proprio (NahIDWinHUD.swf)
+	// O SWF (AS2) e carregado dentro do "HUD Menu" e chama skse.plugins.NahIDWinHUD.GetBars(obj) de poucos em poucos
+	// quadros; aqui preenchemos obj com os numeros e o SWF desenha as barras. O alvo e o da mira (lock-on).
+	bool BarForActor(Actor * a, BarInfo * out)
+	{
+		ActorStats s;
+		if(!a || !ReadActorStats(a, &s) || !s.alive) return false;
+		if((s.isPlayer && !g_cfg.applyPlayer) || (!s.isPlayer && !g_cfg.applyNPCs)) return false;
+		const float mx = ComputeMax(s), mp = ComputeMaxPosture(s);
+		const DWORD now = GetTickCount();
+		Lock();
+		{
+			PoiseState & st = FindOrCreate(s.id, mx, mp, now);
+			Regen(st, now);
+			RegenPosture(st, now);
+			float poiseFrac = (st.max > 0.0f) ? (st.cur / st.max) : 1.0f;
+			if(poiseFrac < 0.0f) poiseFrac = 0.0f;
+			if(poiseFrac > 1.0f) poiseFrac = 1.0f;
+			out->poise = poiseFrac;
+			out->posture = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
+			if(out->posture > 1.0f) out->posture = 1.0f;
+			if(out->posture < 0.0f) out->posture = 0.0f;
+			out->warn = false;
+			RageDisplay(st, now, !s.isPlayer, &out->rageState, &out->rageFrac);
+		}
+		Unlock();
+		return true;
+	}
+
+	// Alvo atual da mira do jogador (o mesmo da barra de vida do inimigo). Sem objetos com destrutor.
+	Actor * LockOnTarget(UInt32 * outHandle)
+	{
+		__try
+		{
+			PlayerCharacter * pc = Engine::Player();
+			if(!pc) return NULL;
+			UInt32 h = pc->targetHandle;
+			if(h == 0 || h == 0x00100000 || h == 0xFFFFFFFF) return NULL;
+			TESObjectREFR * ref = NULL;
+			if(!LookupREFRByHandle(&h, &ref) || !ref) return NULL;
+			Actor * res = NULL;
+			if(ref->formType == kFormType_Character) res = (Actor *)ref;
+			ref->handleRefObject.DecRefHandle();	// a procura incrementa a contagem
+			*outHandle = h;
+			return res;		// so usado de imediato, na mesma chamada do SWF (o jogo mantem o ator vivo no alvo)
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return NULL;
+		}
+	}
+
+	DWORD g_wActiveUntil = 0;
+
+	void PutNum(GFxValue * o, const char * name, double v)
+	{
+		GFxValue x; x.SetNumber(v); o->SetMember(name, &x);
+	}
+	void PutBool(GFxValue * o, const char * name, bool v)
+	{
+		GFxValue x; x.SetBool(v); o->SetMember(name, &x);
+	}
+
+	void FillHudData(GFxValue * o)
+	{
+		const DWORD now = GetTickCount();
+		const bool ready = g_cfg.wEnabled && g_dataLoaded && Engine::Player();
+		PutBool(o, "ready", ready);
+		if(!ready) return;
+
+		BarInfo pi = { 1.0f, 0, 1.0f, false, 0.0f };
+		bool pOn = false;
+		if(g_cfg.wPlayer && BarForActor((Actor *)Engine::Player(), &pi))
+		{
+			if(pi.posture > 0.005f || pi.rageState != 0) g_wActiveUntil = now + 4000;
+			pOn = g_cfg.wPlayerAlways || now < g_wActiveUntil;
+		}
+		PutBool(o, "pOn", pOn);
+		PutNum(o, "pX", g_cfg.wPX); PutNum(o, "pY", g_cfg.wPY); PutNum(o, "pW", g_cfg.wPW); PutNum(o, "pH", g_cfg.wPH);
+		PutNum(o, "pPosture", pi.posture); PutNum(o, "pRageState", pi.rageState); PutNum(o, "pRageFrac", pi.rageFrac);
+
+		BarInfo ti = { 1.0f, 0, 1.0f, false, 0.0f };
+		bool tOn = false;
+		if(g_cfg.wTarget)
+		{
+			UInt32 th = 0;
+			Actor * t = LockOnTarget(&th);
+			if(t && (UInt32)t->formID != 0x14) tOn = BarForActor(t, &ti);
+		}
+		PutBool(o, "tOn", tOn);
+		PutNum(o, "tPosture", ti.posture); PutNum(o, "tRageState", ti.rageState); PutNum(o, "tRageFrac", ti.rageFrac);
+		PutNum(o, "tAnchor", 1);
+		PutNum(o, "tOffX", g_cfg.wTOffX); PutNum(o, "tOffY", g_cfg.wTOffY);
+		PutNum(o, "tW", g_cfg.wTW); PutNum(o, "tH", g_cfg.wTH);
+		PutNum(o, "tFX", g_cfg.wFX); PutNum(o, "tFY", g_cfg.wFY);
+		PutNum(o, "iconMode", g_cfg.wIcon);
+	}
+
+	class GetBarsHandler : public GFxFunctionHandler
+	{
+	public:
+		virtual void Invoke(Args * args)
+		{
+			if(!args || args->numArgs < 1 || !args->args || !args->args[0].IsObject()) return;
+			FillHudData(&args->args[0]);
+		}
+	};
+
+	bool RegisterHudScaleform(GFxMovieView * view, GFxValue * root)
+	{
+		RegisterFunction<GetBarsHandler>(root, view, "GetBars");
+		return true;
+	}
+
+	bool InvokeLoadHud(GFxMovieView * v)
+	{
+		__try
+		{
+			GFxValue c;
+			if(v->GetVariable(&c, "_root.NahIDWinContainer") && c.GetType() != GFxValue::kType_Undefined) return true;	// ja carregado
+			v->Invoke("_root.createEmptyMovieClip", NULL, "%s%d", "NahIDWinContainer", 9400);
+			v->Invoke("_root.NahIDWinContainer.loadMovie", NULL, "%s", "NahIDWinHUD.swf");
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	class HudMenuSink : public BSTEventSink<MenuOpenCloseEvent>
+	{
+	public:
+		virtual EventResult ReceiveEvent(MenuOpenCloseEvent * evn, EventDispatcher<MenuOpenCloseEvent> * dispatcher)
+		{
+			if(evn && evn->opening && g_cfg.wEnabled && evn->menuName.data && strcmp(evn->menuName.data, "HUD Menu") == 0)
+			{
+				GFxMovieView * v = GetHudView();
+				if(v)
+				{
+					const bool ok = InvokeLoadHud(v);
+					_MESSAGE("hud widget: NahIDWinHUD.swf load requested (%s)", ok ? "ok" : "FAILED");
+				}
+			}
+			return kEvent_Continue;
+		}
+	};
+	HudMenuSink g_hudMenuSink;
+
+	void InstallHudSink()
+	{
+		MenuManager * mm = MenuManager::GetSingleton();
+		if(!mm) { _MESSAGE("hud widget: MenuManager not available"); return; }
+		mm->MenuOpenCloseEventDispatcher()->AddEventSink(&g_hudMenuSink);
+		_MESSAGE("hud widget: HUD Menu listener registered");
+	}
+
 	// ------------------------------------------------------------------ mensagens do SKSE
 	void OnMessage(SKSEMessagingInterface::Message * message)
 	{
@@ -2302,6 +2484,7 @@ namespace
 				}
 				else _MESSAGE("WARNING: the input dispatcher is not available - no parry and no rage key");
 				g_dataLoaded = true;
+				InstallHudSink();
 				InstallHealthHook();
 				ApplyHealthGMST();
 				TryHud();
@@ -2363,6 +2546,12 @@ bool SKSEPlugin_Load(const SKSEInterface * skse)
 		_MESSAGE("papyrus interface: registration queued");
 	else
 		_MESSAGE("papyrus interface not available - stagger mode 0 will not be confirmed by the script");
+
+	SKSEScaleformInterface * scaleform = (SKSEScaleformInterface *)skse->QueryInterface(kInterface_Scaleform);
+	if(scaleform && scaleform->Register("NahIDWinHUD", RegisterHudScaleform))
+		_MESSAGE("scaleform interface: NahIDWinHUD registered");
+	else
+		_MESSAGE("scaleform interface not available - own HUD disabled");
 
 	_MESSAGE("running");
 	return true;

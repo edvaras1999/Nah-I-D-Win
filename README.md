@@ -65,3 +65,12 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 ## v0.10.2
 - Visual da furia tambem no jogador (`[Rage] PlayerVisual`, mesma escala 0-3). A ponte escreve no log `rage visual: mode N glow ok/MISSING symbol ok/MISSING`.
 - Diagnostico das quedas do jogador: linhas `PLAYER ANIM: staggerStart/recoilStart/recoilLargeStart/bleedOutStart/KnockDown/ragdollStart` no log, na ordem em que acontecem, entre os golpes e custos de estamina.
+
+## v0.11.0 - HUD proprio (fase 1)
+
+- Novo `Data/Interface/NahIDWinHUD.swf` (ActionScript 2), carregado pela DLL dentro do "HUD Menu" (como o moreHUD).
+- Mostra **barra de postura** e **barra de furia** (tempo restante enquanto ativa; recarga caso contrario) no jogador (por baixo da estamina) e no alvo da mira (por baixo da barra de vida do inimigo, ancorada a ela). Icone losango piscante quando a furia esta ativa.
+- Poise continua na barra especial do TrueHUD.
+- Nova seccao `[HUD]` no .ini e bloco "HUD (barras proprias)" no menu (Advanced).
+- Fase 2 (por fazer): alvo por raio em volta da mira quando nao ha lock-on.
+- Log: procura `scaleform interface: NahIDWinHUD registered` e `hud widget: NahIDWinHUD.swf load requested (ok)`.
