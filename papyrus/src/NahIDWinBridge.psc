@@ -156,6 +156,14 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	endif
 EndFunction
 
+; Regeneracao de estamina do jogador conforme a armadura (100 = normal).
+Function ApplyRegen()
+	float r = NahIDWinNative.GetRegenPercent()
+	if r > 0.0
+		Game.GetPlayer().SetActorValue("StaminaRateMult", r)
+	endif
+EndFunction
+
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
 Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
