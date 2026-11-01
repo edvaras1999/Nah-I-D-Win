@@ -17,6 +17,7 @@ Event OnInit()
 	RegisterForModEvent("NahIDWin_Stagger", "OnNahStagger")
 	RegisterForModEvent("NahIDWin_Load", "OnNahLoad")
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
+	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
 	RegisterInputs()
 	NahIDWinNative.ScriptReady()
 EndEvent
@@ -48,7 +49,60 @@ Function RegisterInputs()
 		RegisterForAnimationEvent(pl, "attackPowerStartLeft")
 		RegisterForAnimationEvent(pl, "attackPowerStartRight")
 		RegisterForAnimationEvent(pl, "attackPowerStartDualWield")
+		RegisterForAnimationEvent(pl, "staggerStart")
 		ApplyRegen()
+	endif
+EndFunction
+
+; Depois de um stagger o jogador fica uns segundos sem poder ser staggerado de novo (para poder bloquear ou esquivar).
+; [Stagger] PlayerImmuneAfterSeconds no .ini (0 = desligado). Staggers pesados do nosso mod (poise quebrado) passam sempre.
+bool sNoStagger = false
+
+Function OnPlayerStagger()
+	float win = NahIDWinNative.IniGetF("Stagger", "PlayerImmuneAfterSeconds", 1.5)
+	if win <= 0.0 || sNoStagger
+		return
+	endif
+	sNoStagger = true
+	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", true)
+	RegisterForSingleUpdate(win)
+EndFunction
+
+Event OnUpdate()
+	Game.GetPlayer().SetAnimationVariableBool("bNoStagger", false)
+	sNoStagger = false
+EndEvent
+
+; Furia de um NPC: brilho e/ou simbolo vermelho durante a furia. [Rage] NPCVisual: 0 nada, 1 brilho, 2 simbolo, 3 os dois.
+Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
+	Actor a = sender as Actor
+	if !a
+		return
+	endif
+	int mode = NahIDWinNative.IniGetF("Rage", "NPCVisual", 1.0) as int
+	if mode <= 0
+		return
+	endif
+	Spell glow = None
+	Spell symbol = None
+	if mode == 1 || mode == 3
+		glow = Game.GetFormFromFile(0x00000841, "NahIDWin.esp") as Spell
+	endif
+	if mode == 2 || mode == 3
+		symbol = Game.GetFormFromFile(0x00000843, "NahIDWin.esp") as Spell
+	endif
+	if glow
+		glow.Cast(a, a)
+	endif
+	if symbol
+		symbol.Cast(a, a)
+	endif
+	Utility.Wait(numArg)
+	if glow
+		a.DispelSpell(glow)
+	endif
+	if symbol
+		a.DispelSpell(symbol)
 	endif
 EndFunction
 
@@ -63,6 +117,10 @@ EndFunction
 ; Cada golpe do jogador gasta estamina (mesmo sem acertar). O custo depende da arma, do tipo de golpe e da armadura.
 Event OnAnimationEvent(ObjectReference akSource, string asEventName)
 	Actor pl = Game.GetPlayer()
+	if asEventName == "staggerStart"
+		OnPlayerStagger()
+		return
+	endif
 	int mode = 0
 	if asEventName == "bashStart" || asEventName == "bashPowerStart"
 		mode = 2
@@ -135,6 +193,10 @@ Function OnNahStagger(string eventName, string strArg, float numArg, Form sender
 				return
 			endif
 			; NPC sem estamina: stagger pesado
+		endif
+		if victim == Game.GetPlayer() && sNoStagger && kind >= 2
+			; stagger do nosso mod (poise quebrado etc.) tem de passar mesmo durante a janela de imunidade
+			victim.SetAnimationVariableBool("bNoStagger", false)
 		endif
 		int tierSpell = kind
 		if kind == 5 || kind == 7

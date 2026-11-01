@@ -57,7 +57,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.10.0 (menu proprio em 3 abas; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.10.1 (visual da furia, imunidade de stagger do jogador; Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -1291,6 +1291,17 @@ namespace
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
+	// Furia de um NPC: avisa a ponte (sender = o NPC, numArg = duracao em segundos) para mostrar o brilho/simbolo.
+	void SendRageEvent(TESObjectREFR * ref, float seconds)
+	{
+		if(!ref) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_Rage", "", seconds, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
+	}
+
 	// Em cada load/novo jogo o estado antigo (poise, postura, furia...) deixa de valer.
 	void ClearStates(const char * why)
 	{
@@ -1705,6 +1716,7 @@ namespace
 		{
 			InterlockedIncrement(&g_rages);
 			_MESSAGE("RAGE (NPC): %08X is immune for %.1f s", h.victim.id, g_cfg.rageSeconds);
+			if(h.victimRef && !h.victim.isPlayer) SendRageEvent(h.victimRef, g_cfg.rageSeconds);
 			if(g_cfg.rageNpcCostPercent > 0.0f && h.victimRef)
 			{
 				float cur = 0.0f, m = 0.0f;

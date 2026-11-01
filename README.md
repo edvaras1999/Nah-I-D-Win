@@ -56,3 +56,8 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Removido do menu: Regenerate Stamina, Posture Damage Mult do Inpa, Ressurreicao, PowerAttack stamina limit, modos de execucao do VioLens, barras extras.
 - Novo: `[NpcBlock] ChanceMin` (chance de bloqueio dos NPCs, reposta pela ponte apos o Inpa); sliders Combat Stamina Regen e Stamina Regen Delay.
 - `zzzSekiro_MCM.pex` ja nao e usado nem enviado. Stub novo: GlobalVariable.
+
+## v0.10.1
+- Estamina baixa deixa de quebrar a postura do jogador: `tools/pexpatch_stamina.py` neutraliza, nos scripts do Inpa (`zzzSekiro_player_main.pex`, `zzzSekiro_player_parry.pex`), a regra "estamina <= 10 ao levar golpe -> deathblow_ME". So a nossa barra de postura quebra a postura.
+- Janela de imunidade do jogador depois de um stagger do jogo (`[Stagger] PlayerImmuneAfterSeconds`, 1.5 s; 0 = desligado), via `bNoStagger`. Staggers pesados do mod passam sempre.
+- Furia dos NPCs com visual: `[Rage] NPCVisual` 0 nada, 1 brilho, 2 simbolo vermelho, 3 os dois (luz e desenho do Inpa, sem o script de ataque perigoso). Novo evento `NahIDWin_Rage`.

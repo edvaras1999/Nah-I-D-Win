@@ -117,6 +117,20 @@ def empty_cloak(r):
     return r[:4] + struct.pack('<I', len(body)) + r[8:24] + body
 groups = [(l, [empty_cloak(r) for r in rl] if l == b'SPEL' else rl) for l, rl in groups]
 
+# ---------- mensagem de arranque: "Inpa Sekiro Combat - Running .." passa a ter o nome do nosso mod ----------
+def rename_msg(r):
+    if fid_of(r) >> 24 != 4: return r
+    subs = subrecs(r)
+    if not any(t == b'DESC' and b'Inpa Sekiro Combat - Running' in v for t, v in subs): return r
+    body = b''
+    for t, v in subs:
+        if t == b'DESC':
+            v = b"<font color='#d48f35'>NAH-I-D-WIN - Running ..</font>\x00"
+        body += t + struct.pack('<H', len(v)) + v
+    print('  mensagem de arranque renomeada: NAH-I-D-WIN - Running ..')
+    return r[:4] + struct.pack('<I', len(body)) + r[8:24] + body
+groups = [(l, [rename_msg(r) for r in rl] if l == b'MESG' else rl) for l, rl in groups]
+
 # ---------- globais por omissao ----------
 SETS = {b'zzzSekiro_resurrection': 0.0, b'zzzSekiro_poisesystem': 0.0, b'zzzSekiro_posture_dmg_mult': 0.0, b'zzzSekiro_posture_dmg_mult_player': 0.0}
 def setglob(r):
@@ -128,8 +142,34 @@ def setglob(r):
     return r[:4] + struct.pack('<I', len(body)) + r[8:24] + body
 groups = [(l, [setglob(r) for r in rl] if l == b'GLOB' else rl) for l, rl in groups]
 
+# ---------- brilho e simbolo da furia dos NPCs (reaproveitam a luz e o desenho "peril" do Inpa, sem o script de ataque perigoso) ----------
+KANJI = 0x040D8DB8
+kd = None
+for l, rl in groups:
+    for r in rl:
+        if fid_of(r) == KANJI:
+            kd = [v for t, v in subrecs(r) if t == b'DATA'][0]
+assert kd and len(kd) == 152
+def fxmgef(fid, edid, name, keep_light, keep_art):
+    w = list(struct.unpack('<38I', kd))
+    if not keep_light: w[6] = 0
+    if not keep_art: w[24] = 0
+    return ns['rec']('MGEF', fid, [ns['sub']('EDID', ns['z'](edid)), ns['sub']('FULL', ns['z'](name)), ns['sub']('DATA', struct.pack('<38I', *w)), ns['sub']('DNAM', b'\x00')])
+def fxspell(fid, edid, name, mgef):
+    spit = struct.pack('<IIIfIIffI', 0, 0, 0, 0.0, 1, 1, 0.0, 0.0, 0)
+    return ns['rec']('SPEL', fid, [ns['sub']('EDID', ns['z'](edid)), ns['sub']('OBND', b'\x00' * 12), ns['sub']('FULL', ns['z'](name)),
+        ns['sub']('ETYP', struct.pack('<I', 0x00013F44)), ns['sub']('DESC', b'\x00'), ns['sub']('SPIT', spit),
+        ns['sub']('EFID', struct.pack('<I', mgef)), ns['sub']('EFIT', struct.pack('<fII', 0.0, 0, 30))])
+used = {fid_of(r) for _, rl in groups for r in rl}
+for f in (0x04000840, 0x04000841, 0x04000842, 0x04000843): assert f not in used, hex(f)
+OWN_MGEF = [OWN_MGEF, fxmgef(0x04000840, 'NahIDWin_RageGlow_mgef', 'NahIDWin rage glow', True, False),
+            fxmgef(0x04000842, 'NahIDWin_RageSymbol_mgef', 'NahIDWin rage symbol', False, True)]
+OWN_SPELS = OWN_SPELS + [fxspell(0x04000841, 'NahIDWin_RageGlow', 'NahIDWin rage glow', 0x04000840),
+                         fxspell(0x04000843, 'NahIDWin_RageSymbol', 'NahIDWin rage symbol', 0x04000842)]
+print('  efeitos da furia: brilho 0x841, simbolo 0x843')
+
 # ---------- juntar os nossos registos ----------
-add = {b'MGEF': [OWN_MGEF], b'SPEL': OWN_SPELS, b'QUST': OWN_QUSTS}
+add = {b'MGEF': OWN_MGEF, b'SPEL': OWN_SPELS, b'QUST': OWN_QUSTS}
 groups = [(l, rl + add.get(l, [])) for l, rl in groups]
 
 # quests Start Game Enabled
