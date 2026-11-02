@@ -34,7 +34,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.14.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.15.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -360,12 +360,28 @@ Function DoBleedOut(Actor victim, int packed, Actor aggressor)
 		pb = Game.GetFormFromFile(0x0075FAAD, "NahIDWin.esp") as Spell
 	endif
 	if pb
+		NahIDWinNative.OwnAnim(700)
 		DoInpaPostureBreak(victim, aggressor, pb)
 	else
-		Debug.SendAnimationEvent(victim, "BleedoutStart")
+		; Repete o pedido de BleedoutStart ate o grafo de animacao o aceitar (a DLL diz se aceitou).
+		int vid = victim.GetFormID()
+		int tries = 0
+		bool ok = false
+		while tries < 6 && !ok
+			NahIDWinNative.OwnAnim(600)
+			Debug.SendAnimationEvent(victim, "BleedoutStart")
+			Utility.Wait(0.25)
+			ok = NahIDWinNative.BleedAccepted(vid)
+			tries += 1
+		endwhile
+		NahIDWinNative.Log("bleedout animation accepted=" + ok + " after " + tries + " tries")
+		if !ok
+			victim.PushActorAway(victim, 0.0)
+		endif
 	endif
 	Utility.Wait(secs)
 	if !victim.IsDead() && !pb
+		NahIDWinNative.OwnAnim(1500)
 		Debug.SendAnimationEvent(victim, "BleedoutStop")
 	endif
 	if isPlayer

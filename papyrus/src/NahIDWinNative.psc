@@ -38,3 +38,9 @@ Function PowerStart() global native
 
 ; Vidas extra do jogador: quantas ja foram gastas desde o ultimo sono (o Bridge guarda no save e repoe a DLL ao carregar).
 Function SetLivesUsed(int n) global native
+
+; Os eventos de animacao enviados nos proximos ms pelo Papyrus nao sao filtrados pelo escudo de stagger.
+Function OwnAnim(int ms) global native
+
+; O grafo de animacao aceitou o ultimo BleedoutStart deste ator (formID)?
+bool Function BleedAccepted(int formId) global native

@@ -103,3 +103,12 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **HUD**: losangos das vidas extra (laranja = disponivel, cinzento = gasta) e estrela do Supremo Rage (laranja = pronto, cinzento = recarga, pisca = ativo) junto das barras.
 - **Menu retratil**: cada bloco abre/fecha (estado em `[MenuOpen]` do ini) e as opcoes de uma funcao desligada ficam escondidas.
 - Pendente: efeito visual de fogo na aura (por agora brilho + simbolo da furia) e a animacao.
+
+## v0.15.0
+
+- **Bleedout fiavel**: o Papyrus repete o pedido de `BleedoutStart` ate o grafo de animacao o aceitar (a DLL diz se aceitou; se falhar 6 vezes o personagem e empurrado ao chao). Durante o bleedout (e na janela ate a animacao arrancar) o escudo de stagger bloqueia stagger leve e recuos, que cancelavam o bleedout.
+- **Vida extra com bleedout**: ao gastar uma vida o jogador cai em bleedout, fica invulneravel e levanta-se com a vida reposta.
+- **Bosses com 2 vidas** (`[Bosses]`): NPC unico (flag do jogo) com nivel minimo (30), nao companheiro. Ao gastar a 1a vida volta com a vida (100%) e cai em bleedout. Execucao e dragoes/gigantes ficam para a v0.16.0.
+- **HUD**: vidas extra em circulos verdes (jogador) e vermelhos (bosses); estrela laranja do Supremo Rage. Postura estilo Sekiro agora enche do centro para as extremidades e pisca vermelho quando cheia.
+- **TrueHUD**: a barra especial passa a ser o POISE (a descer; a zero: stagger pesado). `Bar=0` por omissao; a postura fica nas barras proprias.
+- **Menu/ini**: gasto de estamina por golpe do jogador e do NPC, ligado, 10 e 10 por omissao.

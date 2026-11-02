@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.14.0 (vidas extra do jogador; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.15.0 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -249,6 +249,9 @@ namespace
 		// vidas extra do jogador
 		int		livesEnabled, livesLevel2, livesLevel3;
 		float	livesHealthPct, livesGoldPct, livesInvuln;
+		// bosses (2 vidas): unico + nivel minimo
+		int		bossEnabled, bossMinLevel;
+		float	bossHealthPct, bossInvuln;
 		// Supremo Rage (aura)
 		int		supEnabled, supKey;
 		float	supSeconds, supCooldown, supCostPerSec, supRadius, supDps;
@@ -388,8 +391,8 @@ namespace
 		c.bleedExtraImmune	= IniF("Posture", "BleedOutImmuneSeconds", 5.0f);
 
 		c.stamEnabled		= IniI("Stamina", "Enabled", 1);
-		c.swingCostPlayer	= IniF("Stamina", "SwingCostPlayer", 8.0f);
-		c.hitCostNpc		= IniF("Stamina", "HitCostNPC", 0.0f);
+		c.swingCostPlayer	= IniF("Stamina", "SwingCostPlayer", 10.0f);
+		c.hitCostNpc		= IniF("Stamina", "HitCostNPC", 10.0f);
 		static const float typeMultDefault[13] = { 0.6f, 1.0f, 0.6f, 1.2f, 1.3f, 1.6f, 1.8f, 0.8f, 0.6f, 0.0f, 1.0f, 0.5f, 0.8f };
 		for(int i = 0; i < 13; i++)
 		{
@@ -458,6 +461,10 @@ namespace
 		c.livesHealthPct = IniF("Lives", "HealthPercent", 50.0f);
 		c.livesGoldPct	= IniF("Lives", "GoldLossPercent", 25.0f);
 		c.livesInvuln	= IniF("Lives", "InvulnSeconds", 3.0f);
+		c.bossEnabled	= IniI("Bosses", "Enabled", 1);
+		c.bossMinLevel	= IniI("Bosses", "MinLevel", 30);
+		c.bossHealthPct	= IniF("Bosses", "HealthPercent", 100.0f);
+		c.bossInvuln	= IniF("Bosses", "InvulnSeconds", 3.0f);
 		c.supEnabled	= IniI("Supreme", "Enabled", 1);
 		c.supKey		= IniI("Supreme", "Key", 35);
 		c.supSeconds	= IniF("Supreme", "DurationSeconds", 10.0f);
@@ -497,7 +504,7 @@ namespace
 		c.hudEnabled	= IniI("TrueHUD", "Enabled", 1);
 		c.hudPlayer		= IniI("TrueHUD", "ShowForPlayer", 1);
 		c.hudFlash		= IniI("TrueHUD", "FlashOnBreak", 1);
-		c.hudBar		= IniI("TrueHUD", "Bar", 1);
+		c.hudBar		= IniI("TrueHUD", "Bar", 0);
 		c.bar2Enabled	= IniI("TrueHUD", "SecondBar", 1);
 		c.barPoise		= IniI("TrueHUD", "BarPoise", 1);
 		c.barRage		= IniI("TrueHUD", "BarRage", 1);
@@ -588,6 +595,8 @@ namespace
 		DWORD	rageUntil;		// furia (imune) ate este momento
 		DWORD	rageReadyAt;	// proxima furia permitida a partir daqui
 		DWORD	exhaustReadyAt;	// proxima exaustao permitida a partir daqui
+		DWORD	invulnUntil;	// sem dano de vida ate aqui (vida extra / bleedout de boss)
+		int		bossUsed;		// boss: a vida extra ja foi gasta
 	};
 	typedef std::map<UInt32, PoiseState> StateMap;
 
@@ -667,7 +676,7 @@ namespace
 			}
 			PoiseState s;
 			s.cur = maxPoise; s.max = maxPoise; s.lastHit = 0; s.lastTick = now; s.immuneUntil = 0;
-			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0; s.rageUntil = 0; s.rageReadyAt = 0; s.exhaustReadyAt = 0;
+			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0; s.rageUntil = 0; s.rageReadyAt = 0; s.exhaustReadyAt = 0; s.invulnUntil = 0; s.bossUsed = 0;
 			it = g_states.insert(std::make_pair(id, s)).first;
 		}
 		else
@@ -1335,6 +1344,7 @@ namespace
 		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
 		if(!d) { _MESSAGE("stagger: the SKSE mod event dispatcher is not available"); return; }
 
+		if(tier == 4) EnsureNotifyHook(victim);
 		const LONG seq = InterlockedIncrement(&g_seq) & 0x1FFFFF;
 		char arg[24];
 		_snprintf_s(arg, sizeof(arg), _TRUNCATE, "%d", (int)attackerId);
@@ -1921,6 +1931,21 @@ namespace
 		const int u = LivesUnlocked(a) - (int)g_livesUsed;
 		return u > 0 ? u : 0;
 	}
+	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
+	bool IsBossActor(Actor * a)
+	{
+		__try
+		{
+			if(!g_cfg.bossEnabled || !a || a->formID == 0x14) return false;
+			if(a->flags1 & Actor::kFlags_IsPlayerTeammate) return false;
+			TESForm * b = a->baseForm;
+			if(!b || b->formType != kFormType_NPC) return false;
+			if(!(((TESNPC *)b)->actorData.flags & 0x20)) return false;	// Unique
+			return (int)CALL_MEMBER_FN(a, GetLevel)() >= g_cfg.bossMinLevel;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+	}
+	volatile LONG g_bossPending = 0;	// formID do boss cuja vida extra acabou de ser gasta
 	float AdjustHealthDamage(Actor * self, Actor * attacker, float amount)
 	{
 		if(!(amount < 0.0f) || !(amount > -1.0e9f) || !g_cfg.enabled || g_rageCostBusy) return amount;
@@ -1982,6 +2007,38 @@ namespace
 				Unlock();
 				result = amount * mult;
 			}
+			if(!isPlayer && result < 0.0f && g_cfg.enabled)
+			{
+				bool inv = false, lose = false;
+				Lock();
+				{
+					StateMap::iterator ib = g_states.find(id);
+					if(ib != g_states.end())
+					{
+						if(now < ib->second.invulnUntil) inv = true;
+						else if(ib->second.bossUsed == 0) lose = true;
+					}
+				}
+				Unlock();
+				if(inv) { result = 0.0f; why = "boss invulnerable"; }
+				else if(lose && IsBossActor(self))
+				{
+					float curHp = 0.0f, maxHp = 0.0f;
+					if(ReadAV(self, 24, &curHp, &maxHp) && curHp + result <= 0.5f)
+					{
+						result = -(curHp - 1.0f);
+						if(result > 0.0f) result = 0.0f;
+						Lock();
+						{
+							StateMap::iterator ib = g_states.find(id);
+							if(ib != g_states.end()) { ib->second.bossUsed = 1; ib->second.invulnUntil = now + 60000; }
+						}
+						Unlock();
+						InterlockedExchange(&g_bossPending, (LONG)id);
+						why = "boss life";
+					}
+				}
+			}
 			if(isPlayer && g_cfg.livesEnabled)
 			{
 				if(result < 0.0f && now < g_invulnUntil)
@@ -2022,15 +2079,36 @@ namespace
 		}
 	}
 
+	void ReviveBoss(Actor * self, UInt32 id);
 	void __fastcall HookHD_Actor(Actor * self, void *, Actor * attacker, float amount)
 	{
 		amount = AdjustHealthDamage(self, attacker, amount);
 		g_origHD[0](self, attacker, amount);
+		if(g_bossPending && self && (UInt32)g_bossPending == self->formID) ReviveBoss(self, self->formID);
 	}
 	void __fastcall HookHD_Character(Actor * self, void *, Actor * attacker, float amount)
 	{
 		amount = AdjustHealthDamage(self, attacker, amount);
 		g_origHD[1](self, attacker, amount);
+		if(g_bossPending && self && (UInt32)g_bossPending == self->formID) ReviveBoss(self, self->formID);
+	}
+	// Poe o ator em BleedOut (estado + evento para o Papyrus): usado ao gastar uma vida extra.
+	void StartForcedBleed(Actor * self)
+	{
+		const DWORD now = GetTickCount();
+		Lock();
+		{
+			StateMap::iterator ib = g_states.find(self->formID);
+			if(ib != g_states.end())
+			{
+				ib->second.bleedUntil = now + (DWORD)(g_cfg.bleedSeconds * 1000.0f);
+				ib->second.bleedImmuneUntil = ib->second.bleedUntil + (DWORD)(g_cfg.bleedExtraImmune * 1000.0f);
+				ib->second.pCur = 0.0f;
+				ib->second.cur = ib->second.max;
+			}
+		}
+		Unlock();
+		SendStaggerEvent((TESObjectREFR *)self, 0, 4);
 	}
 	// Depois de o dano que mataria o jogador ter sido limitado a deixar 1 de vida: devolve a vida e avisa o Papyrus (ouro, aviso).
 	void ReviveExtraLife(Actor * self)
@@ -2044,7 +2122,32 @@ namespace
 			if(target > cur) RestoreAV(self, 24, target - cur);
 		}
 		_MESSAGE("EXTRA LIFE used (#%d): health back to %.0f%%, invulnerable %.1f s", (int)g_livesUsed, g_cfg.livesHealthPct, g_cfg.livesInvuln);
+		StartForcedBleed(self);
+		const DWORD now = GetTickCount();
+		g_invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + g_cfg.livesInvuln) * 1000.0f);
 		SendLifeEvent((TESObjectREFR *)self, (int)g_livesUsed);
+	}
+	// Vida do boss gasta: volta com a vida (HealthPercent) e cai em bleedout, como os essenciais.
+	void ReviveBoss(Actor * self, UInt32 id)
+	{
+		InterlockedExchange(&g_bossPending, 0);
+		float cur = 0.0f, mx = 0.0f;
+		if(ReadAV(self, 24, &cur, &mx))
+		{
+			float target = mx * g_cfg.bossHealthPct / 100.0f;
+			if(target < 1.0f) target = 1.0f;
+			if(target > cur) RestoreAV(self, 24, target - cur);
+		}
+		const DWORD now = GetTickCount();
+		Lock();
+		{
+			StateMap::iterator ib = g_states.find(id);
+			if(ib != g_states.end()) ib->second.invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + g_cfg.bossInvuln) * 1000.0f);
+		}
+		Unlock();
+		_MESSAGE("BOSS LIFE used: %08X back to %.0f%% health, bleedout", id, g_cfg.bossHealthPct);
+		StartForcedBleed(self);
+		SendLifeEvent((TESObjectREFR *)self, 1);
 	}
 
 	void __fastcall HookHD_Player(Actor * self, void *, Actor * attacker, float amount)
@@ -2118,13 +2221,17 @@ namespace
 		return NULL;
 	}
 
+	volatile DWORD g_ownAnimUntil = 0;		// o Papyrus esta a enviar a animacao de bleedout/stagger do mod
+	struct BleedAcc { UInt32 id; DWORD tick; int ok; };
+	BleedAcc g_bleedAcc[8];
+	int g_bleedAccN = 0;
 	bool IsRagingId(UInt32 id)
 	{
 		const DWORD now = GetTickCount();
 		bool r = false;
 		Lock();
 		StateMap::iterator it = g_states.find(id);
-		if(it != g_states.end() && now < it->second.rageUntil) r = true;
+		if(it != g_states.end() && (now < it->second.rageUntil || now < it->second.bleedUntil)) r = true;
 		Unlock();
 		return r;
 	}
@@ -2143,7 +2250,8 @@ namespace
 	{
 		__try
 		{
-			if(g_ownNotify || !g_cfg.rageStaggerShield || !g_cfg.enabled || !g_cfg.rageEnabled) return false;
+			if(g_ownNotify || !g_cfg.rageStaggerShield || !g_cfg.enabled) return false;
+			if((LONG)(GetTickCount() - g_ownAnimUntil) < 0) return false;
 			if(!evn || !IsHitReactionName(evn->data)) return false;
 			const UInt32 id = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);	// formID do ator (holder = ator + 0x20)
 			if(!IsRagingId(id)) return false;
@@ -2156,6 +2264,21 @@ namespace
 		}
 	}
 
+	// Regista se o grafo de animacao aceitou o pedido de BleedoutStart (o Papyrus repete ate aceitar).
+	void NoteBleedResult(void * holder, const BSFixedString * evn, bool ok)
+	{
+		__try
+		{
+			if(!evn || !evn->data || _stricmp(evn->data, "BleedoutStart") != 0) return;
+			const UInt32 id = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);
+			int k = -1;
+			for(int i = 0; i < g_bleedAccN; i++) if(g_bleedAcc[i].id == id) { k = i; break; }
+			if(k < 0) { k = (g_bleedAccN < 8) ? g_bleedAccN++ : 0; }
+			g_bleedAcc[k].id = id; g_bleedAcc[k].tick = GetTickCount(); g_bleedAcc[k].ok = ok ? 1 : 0;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {}
+	}
+
 	bool __fastcall HookNotify(void * holder, void *, const BSFixedString * evn)
 	{
 		void ** vtbl = NULL;
@@ -2163,7 +2286,9 @@ namespace
 		void * orig = FindNotifyOrig(vtbl);
 		if(!orig) return false;
 		if(ShouldBlockNotify(holder, evn)) return true;
-		return ((NotifyFnT)orig)(holder, evn);
+		const bool r = ((NotifyFnT)orig)(holder, evn);
+		NoteBleedResult(holder, evn, r);
+		return r;
 	}
 
 	void EnsureNotifyHook(TESObjectREFR * ref)
@@ -2630,6 +2755,17 @@ namespace
 		return g_cfg.language;
 	}
 
+	void N_OwnAnim(StaticFunctionTag *, SInt32 ms)
+	{
+		g_ownAnimUntil = GetTickCount() + (DWORD)(ms > 0 ? ms : 0);
+	}
+	bool N_BleedAccepted(StaticFunctionTag *, SInt32 id)
+	{
+		bool r = false;
+		const DWORD now = GetTickCount();
+		for(int i = 0; i < g_bleedAccN; i++) if((SInt32)g_bleedAcc[i].id == id && g_bleedAcc[i].ok && now - g_bleedAcc[i].tick < 2500) r = true;
+		return r;
+	}
 	void N_BleedDone(StaticFunctionTag *, SInt32 packed)
 	{
 		if(g_cfg.diag) _MESSAGE("papyrus: bleedout #%d finished (the victim should be standing again)", (int)((packed >> 3) & 0x1FFFFF));
@@ -2651,6 +2787,8 @@ namespace
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("BleedDone", "NahIDWinNative", N_BleedDone, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("ScriptReady", "NahIDWinNative", N_ScriptReady, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("SetLivesUsed", "NahIDWinNative", N_SetLivesUsed, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("OwnAnim", "NahIDWinNative", N_OwnAnim, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, bool, SInt32>("BleedAccepted", "NahIDWinNative", N_BleedAccepted, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));
 		_MESSAGE("papyrus functions registered (NahIDWinNative)");
 		return true;
@@ -2785,6 +2923,13 @@ namespace
 			}
 		}
 		PutBool(o, "tOn", tOn);
+		{
+			Actor * ta = NULL; int hw2 = 0;
+			if(tOn) ta = CurrentTarget(&hw2);
+			int bu = 0, bl = 0;
+			if(ta && IsBossActor(ta)) { bu = 1; bl = 1; Lock(); StateMap::iterator ib = g_states.find(ta->formID); if(ib != g_states.end() && ib->second.bossUsed) bl = 0; Unlock(); }
+			PutNum(o, "tLifeUnl", bu); PutNum(o, "tLifeAvail", bl);
+		}
 		PutNum(o, "tPosture", ti.posture); PutNum(o, "tRageState", ti.rageState); PutNum(o, "tRageFrac", ti.rageFrac);
 		PutNum(o, "tAnchor", g_cfg.wAnchor ? 1 : 0);
 		PutNum(o, "tOffX", g_cfg.wTOffX); PutNum(o, "tOffY", g_cfg.wTOffY);

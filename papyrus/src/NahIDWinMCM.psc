@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 24
+	return 25
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 6
+	if count > 0 && tableRev == 7
 		return
 	endif
-	tableRev = 6
+	tableRev = 7
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -544,8 +544,8 @@ Function BuildTable()
 	AddSetting(4, 0, "Exhaustion", "CooldownSeconds", "Recarga da exaustao (s)", "Exhaustion cooldown (s)", "Tempo minimo entre duas exaustoes.", "Minimum time between two exhaustions.", 0.0, 30.0, 1.0, 8.0)
 	AddSetting(4, 1, "Exhaustion", "NPCs", "Exaustao nos NPCs", "Exhaustion on NPCs", "NPCs sem estamina levam stagger pesado.", "NPCs with no stamina get a heavy stagger.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(5, 1, "Stamina", "Enabled", "Custo de estamina por golpe", "Stamina cost per swing", "Liga o custo de estamina por golpe e a influencia da armadura.", "Enables stamina cost per swing and armor influence.", 0.0, 1.0, 1.0, 1.0)
-	AddSetting(5, 0, "Stamina", "SwingCostPlayer", "Custo base por golpe - jogador", "Base cost per swing - player", "Estamina gasta por cada balanco de arma (mesmo sem acertar).", "Stamina spent by each weapon swing (even when missing).", 0.0, 40.0, 1.0, 8.0)
-	AddSetting(5, 0, "Stamina", "HitCostNPC", "Custo por golpe - NPCs", "Cost per swing - NPCs", "0 = deixa-se aos mods de estamina. Senao a DLL tira isto por golpe que o NPC acerta.", "0 = left to stamina mods. Otherwise the DLL takes this per hit the NPC lands.", 0.0, 40.0, 1.0, 0.0)
+	AddSetting(5, 0, "Stamina", "SwingCostPlayer", "Gasto de estamina por golpe - Jogador", "Stamina spent per hit - Player", "Estamina gasta por cada balanco de arma (mesmo sem acertar).", "Stamina spent by each weapon swing (even when missing).", 0.0, 40.0, 1.0, 10.0)
+	AddSetting(5, 0, "Stamina", "HitCostNPC", "Gasto de estamina por golpe - NPC", "Stamina spent per hit - NPC", "Estamina que o NPC perde por golpe que desfecha (0 = deixa-se aos mods de estamina).", "0 = left to stamina mods. Otherwise the DLL takes this per hit the NPC lands.", 0.0, 40.0, 1.0, 10.0)
 	AddSetting(5, 0, "Stamina", "PowerAttackOwnCost", "Golpe forte: custo extra do mod (x)", "Power attack: extra mod cost (x)", "0 = so o custo do jogo (PowerAttack Cost Mult acima). Acima de 0 o mod cobra tambem este multiplo do custo base.", "0 = only the game cost (PowerAttack Cost Mult above). Above 0 the mod also charges this multiple of the base cost.", 0.0, 4.0, 0.1, 0.0)
 	AddSetting(5, 0, "Stamina", "BashMult", "Golpe de escudo (x)", "Shield bash (x)", "Multiplicador do custo em golpe de escudo.", "Cost multiplier for shield bashes.", 0.0, 4.0, 0.1, 1.0)
 	AddSetting(6, 0, "NpcBlock", "ChanceMin", "Chance minima de bloqueio dos NPCs", "NPC minimum block chance", "Quanto os NPCs bloqueiam. O Inpa deixa 0.60 (muito). Mais baixo = bloqueiam e fazem parry menos vezes. Nao muda quantos NPCs podem bloquear.", "How often NPCs block. Inpa uses 0.60 (a lot). Lower = they block and parry less often. Does not change how many NPCs can block.", 0.0, 1.0, 0.05, 0.3)
@@ -580,7 +580,7 @@ Function BuildTable()
 	AddSetting(9, 0, "Stamina", "ArmorCostFactor", "Armadura aumenta o custo", "Armor raises the cost", "Custo x (1 + armadura/100 x isto). Armadura pesada cansa mais.", "Cost x (1 + armor/100 x this). Heavy armor tires faster.", 0.0, 2.0, 0.05, 0.25)
 	AddSetting(9, 1, "Stamina", "ArmorRegenEnabled", "Armadura abranda a regeneracao", "Armor slows regeneration", "A armadura reduz a regeneracao de estamina do jogador. Desliga se achas a regeneracao lenta.", "Armor reduces the player's stamina regeneration. Turn off if regeneration feels slow.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(9, 0, "Stamina", "ArmorRegenFactor", "Intensidade da regeneracao", "Regeneration strength", "Regeneracao % = 100 / (1 + armadura/100 x isto).", "Regeneration % = 100 / (1 + armor/100 x this).", 0.0, 2.0, 0.05, 0.3)
-	AddSetting(10, 0, "TrueHUD", "Bar", "Barra do TrueHUD", "TrueHUD bar", "0 = poise, 1 = postura (recomendado), 2 = risco (a mais perto de quebrar).", "0 = poise, 1 = posture, 2 = risk (whichever is closest to breaking).", 0.0, 2.0, 1.0, 1.0)
+	AddSetting(10, 0, "TrueHUD", "Bar", "Barra do TrueHUD", "TrueHUD bar", "0 = poise a descer (recomendado), 1 = postura, 2 = risco.", "0 = poise, 1 = posture, 2 = risk (whichever is closest to breaking).", 0.0, 2.0, 1.0, 0.0)
 	AddSetting(10, 0, "TrueHUD", "PoiseWarnFraction", "Aviso de poise baixo (fracao)", "Low poise warning (fraction)", "A barra pisca quando o poise desce abaixo disto. 0 = desligado.", "The bar flashes when poise drops below this. 0 = off.", 0.0, 0.8, 0.05, 0.3)
 	AddSetting(10, 1, "TrueHUD", "FlashOnBreak", "Barra pisca ao quebrar", "Bar flashes on break", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "General", "Player", "Poise e postura no jogador", "Poise and posture on player", "", "", 0.0, 1.0, 1.0, 1.0)
