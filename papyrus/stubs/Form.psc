@@ -9,3 +9,5 @@ Event OnAnimationEvent(ObjectReference akSource, string asEventName) native
 Event OnKeyDown(int keyCode) native
 Event OnUpdate() native
 Function RegisterForSleep() native
+Event OnSleepStart(float afSleepStartTime, float afDesiredSleepEndTime) native
+Event OnSleepStop(bool abInterrupted) native
