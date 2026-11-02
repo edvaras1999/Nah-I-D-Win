@@ -8,3 +8,4 @@ Function RegisterForSingleUpdate(float afInterval) native
 Event OnAnimationEvent(ObjectReference akSource, string asEventName) native
 Event OnKeyDown(int keyCode) native
 Event OnUpdate() native
+Function RegisterForSleep() native

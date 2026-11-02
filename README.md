@@ -95,3 +95,11 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **Escudo de stagger na furia (jogador e NPCs)**: a DLL encadeia a funcao de notificacao do grafo de animacao e ignora `staggerStart` / `recoilStart`... enquanto o ator esta em furia. Os nossos proprios staggers passam sempre. `[Rage] StaggerImmune=0` desliga. A imunidade em golpes fortes foi retirada.
 - **Barras estilo Sekiro**: a postura enche dos dois lados para o centro (`[HUD] BarStyle=1`; 0 = plana). Posicao por preset (esquerda/centro/direita x cima/centro/baixo) + ajuste X/Y em pixeis, para jogador e alvo, no menu e no ini.
 - Log: `stagger shield: hook installed...` e `shield blocked=N` no SUMMARY.
+
+## v0.14.0
+
+- **Vidas extra do jogador** (`[Lives]`): 2a vida no nivel 30, 3a no nivel 60. Quando o dano mataria o jogador, a DLL deixa-o a 1 de vida, repoe 50%, da 3 s de invulnerabilidade e o Bridge tira 25% do ouro. Enchem ao dormir numa cama (esperar nao conta). Guardado no save pelo Bridge (`livesUsed`).
+- **Supremo Rage** (`[Supreme]`, tecla H, ligar/desligar): 10 s, custo 2% da vida por segundo, aura que queima inimigos hostis num raio, mais tudo o que a furia normal da. Recarga de 500 s.
+- **HUD**: losangos das vidas extra (laranja = disponivel, cinzento = gasta) e estrela do Supremo Rage (laranja = pronto, cinzento = recarga, pisca = ativo) junto das barras.
+- **Menu retratil**: cada bloco abre/fecha (estado em `[MenuOpen]` do ini) e as opcoes de uma funcao desligada ficam escondidas.
+- Pendente: efeito visual de fogo na aura (por agora brilho + simbolo da furia) e a animacao.

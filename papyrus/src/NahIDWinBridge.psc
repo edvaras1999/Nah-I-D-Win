@@ -18,6 +18,8 @@ Event OnInit()
 	RegisterForModEvent("NahIDWin_Load", "OnNahLoad")
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
 	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
+	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
+	RegisterForSleep()
 	RegisterInputs()
 	NahIDWinNative.ScriptReady()
 EndEvent
@@ -28,8 +30,11 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Stagger", "OnNahStagger")
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
 	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
+	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
+	RegisterForSleep()
+	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.13.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.14.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -90,6 +95,56 @@ Event OnUpdate()
 	sNoStagger = false
 EndEvent
 
+; ---------------- vidas extra do jogador ----------------
+int livesUsed = 0
+bool sleptInBed = false
+
+; A DLL avisa quando uma vida extra foi gasta (numArg = quantas ja gastas): ouro, aviso e brilho.
+Function OnNahLife(string eventName, string strArg, float numArg, Form sender)
+	livesUsed = numArg as int
+	Actor pl = Game.GetPlayer()
+	float pct = NahIDWinNative.IniGetF("Lives", "GoldLossPercent", 25.0)
+	Form gold = Game.GetForm(0x0000000F)
+	int lost = 0
+	if gold && pct > 0.0
+		int have = pl.GetItemCount(gold)
+		lost = ((have as float) * pct / 100.0) as int
+		if lost > 0
+			pl.RemoveItem(gold, lost, true, None)
+		endif
+	endif
+	if NahIDWinNative.GetLanguage() == 0
+		Debug.Notification("Vida extra usada (" + livesUsed + " gasta(s)). Ouro perdido: " + lost)
+	else
+		Debug.Notification("Extra life used (" + livesUsed + " spent). Gold lost: " + lost)
+	endif
+	Spell glow = Game.GetFormFromFile(0x00000841, "NahIDWin.esp") as Spell
+	if glow
+		glow.Cast(pl, pl)
+		Utility.Wait(3.0)
+		pl.DispelSpell(glow)
+	endif
+EndFunction
+
+; Dormir numa cama enche as vidas extra outra vez (esperar nao conta).
+Event OnSleepStart(float afSleepStartTime, float afDesiredSleepEndTime)
+	Actor pl = Game.GetPlayer()
+	sleptInBed = (pl.GetFurnitureReference() != None) && (pl.GetSleepState() >= 2)
+EndEvent
+
+Event OnSleepStop(bool abInterrupted)
+	if sleptInBed && !abInterrupted && livesUsed > 0
+		livesUsed = 0
+		NahIDWinNative.SetLivesUsed(0)
+		if NahIDWinNative.GetLanguage() == 0
+			Debug.Notification("Vidas extra recuperadas.")
+		else
+			Debug.Notification("Extra lives restored.")
+		endif
+	endif
+	sleptInBed = false
+EndEvent
+
 ; Furia (jogador e NPC): brilho e/ou simbolo vermelho.
 ; [Rage] StaggerImmune: 1 = ligado. [Rage] NPCVisual / PlayerVisual: 0 nada, 1 brilho, 2 simbolo, 3 os dois.
 Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
@@ -100,6 +155,9 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	int mode = NahIDWinNative.IniGetF("Rage", "NPCVisual", 1.0) as int
 	if a == Game.GetPlayer()
 		mode = NahIDWinNative.IniGetF("Rage", "PlayerVisual", 1.0) as int
+	endif
+	if strArg == "supreme"
+		mode = 3
 	endif
 	Spell glow = None
 	Spell symbol = None
@@ -118,13 +176,15 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 		ss = "ok"
 	endif
 	NahIDWinNative.Log("rage visual: mode " + mode + " glow " + gs + " symbol " + ss)
-	if glow
-		glow.Cast(a, a)
+	if numArg > 0.0
+		if glow
+			glow.Cast(a, a)
+		endif
+		if symbol
+			symbol.Cast(a, a)
+		endif
+		Utility.Wait(numArg)
 	endif
-	if symbol
-		symbol.Cast(a, a)
-	endif
-	Utility.Wait(numArg)
 	if glow
 		a.DispelSpell(glow)
 	endif

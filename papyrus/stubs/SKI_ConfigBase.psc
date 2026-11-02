@@ -41,3 +41,4 @@ Function SetMenuDialogStartIndex(int a_value) native
 Function SetMenuDialogDefaultIndex(int a_value) native
 Function SetMenuOptionValue(int a_option, string a_value, bool a_noUpdate = false) native
 Function SetOptionFlags(int a_option, int a_flags, bool a_noUpdate = false) native
+int Function AddTextOption(string a_text, string a_value, int a_flags = 0) native

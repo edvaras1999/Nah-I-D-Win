@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 23
+	return 24
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 5
+	if count > 0 && tableRev == 6
 		return
 	endif
-	tableRev = 5
+	tableRev = 6
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -589,6 +589,7 @@ Function BuildTable()
 	AddSetting(13, 1, "HUD", "Player", "Barras do jogador", "Player bars", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "PlayerAlways", "Barras do jogador sempre visiveis", "Player bars always visible", "Desligado = so aparecem em combate ou com a furia ativa.", "Off = only shown in combat or while rage is active.", 0.0, 1.0, 1.0, 0.0)
 	AddSetting(13, 1, "HUD", "Target", "Barras do alvo (mira)", "Target bars (lock-on)", "Mostra por baixo da barra de vida do inimigo que esta na mira.", "Shown under the health bar of the locked-on enemy.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(13, 1, "HUD", "IconsAlways", "Losangos e simbolo sempre visiveis", "Lives and Supreme icons always visible", "Mostra as vidas extra e o Supremo Rage junto as barras, mesmo fora de combate.", "Shows extra lives and Supreme Rage next to the bars, even out of combat.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 1, "HUD", "RageIcon", "Icone da furia ativa", "Active rage icon", "Losango piscante ao lado das barras quando a furia esta ativa.", "Flashing diamond next to the bars while rage is active.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 2, "HUD", "BarStyle", "Estilo das barras", "Bar style", "Plana ou estilo Sekiro (enche dos dois lados para o centro).", "Flat or Sekiro style (fills from both sides toward the center).", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(13, 2, "HUD", "PlayerPosH", "Jogador: posicao horizontal", "Player: horizontal position", "Esquerda, centro ou direita do ecra.", "Left, center or right of the screen.", 0.0, 2.0, 1.0, 0.0)
@@ -602,6 +603,19 @@ Function BuildTable()
 	AddSetting(13, 0, "HUD", "TargetShiftY", "Alvo: ajuste Y", "Target: Y adjust", "Pixeis a somar a posicao escolhida (positivo = baixo).", "Pixels added to the chosen position (positive = down).", -360.0, 360.0, 1.0, 55.0)
 	AddSetting(13, 0, "HUD", "TargetWidth", "Alvo: largura (0 = 200)", "Target: width (0 = 200)", "", "", 0.0, 600.0, 5.0, 0.0)
 	AddSetting(13, 1, "HUD", "TargetAnchor", "Alvo: seguir a barra de vida do jogo", "Target: follow the game health bar", "Ligado = por baixo do nome do inimigo (se a barra do jogo estiver visivel).", "On = under the enemy name (if the game bar is visible).", 0.0, 1.0, 1.0, 0.0)
+	AddSetting(14, 1, "Lives", "Enabled", "Vidas extra ligadas", "Extra lives enabled", "Quando morreres, usas uma vida extra se tiveres alguma. Enchem ao dormir numa cama.", "When you would die, an extra life is used if you have one. They refill when you sleep in a bed.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(14, 0, "Lives", "Level2", "Nivel da 2a vida", "Level of the 2nd life", "Nivel do jogador para desbloquear a segunda vida.", "Player level to unlock the second life.", 1.0, 81.0, 1.0, 30.0)
+	AddSetting(14, 0, "Lives", "Level3", "Nivel da 3a vida", "Level of the 3rd life", "Nivel do jogador para desbloquear a terceira vida.", "Player level to unlock the third life.", 1.0, 81.0, 1.0, 60.0)
+	AddSetting(14, 0, "Lives", "HealthPercent", "Vida ao voltar (%)", "Health on return (%)", "Percentagem da vida maxima com que voltas.", "Percent of max health you return with.", 10.0, 100.0, 5.0, 50.0)
+	AddSetting(14, 0, "Lives", "GoldLossPercent", "Ouro perdido por morte (%)", "Gold lost per death (%)", "Percentagem do ouro que perdes ao usar uma vida. Sem ouro, nao perdes nada.", "Percent of your gold lost when a life is used. No gold, nothing lost.", 0.0, 50.0, 1.0, 25.0)
+	AddSetting(14, 0, "Lives", "InvulnSeconds", "Invulnerabilidade apos voltar (s)", "Invulnerability after return (s)", "Segundos sem levar dano depois de usares uma vida.", "Seconds without damage after a life is used.", 0.0, 10.0, 0.5, 3.0)
+	AddSetting(15, 1, "Supreme", "Enabled", "Supremo Rage ligado", "Supreme Rage enabled", "Aura de fogo: tudo o que a furia da, mais dano em area. Cooldown muito longo.", "Fire aura: everything rage gives, plus area damage. Very long cooldown.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(15, 0, "Supreme", "Key", "Tecla do Supremo Rage (codigo)", "Supreme Rage key (code)", "Codigo DirectInput. 35 = H. Prime outra vez para desligar.", "DirectInput code. 35 = H. Press again to turn off.", 1.0, 255.0, 1.0, 35.0)
+	AddSetting(15, 0, "Supreme", "DurationSeconds", "Duracao (s)", "Duration (s)", "", "", 3.0, 30.0, 1.0, 10.0)
+	AddSetting(15, 0, "Supreme", "CooldownSeconds", "Recarga (s)", "Cooldown (s)", "Tempo ate poderes usar outra vez. O jogador tem de saber quando usar.", "Time until it can be used again.", 60.0, 1200.0, 10.0, 500.0)
+	AddSetting(15, 0, "Supreme", "CostPercentPerSecond", "Custo (% da vida por segundo)", "Cost (% of health per second)", "Nunca te mata.", "Never kills you.", 1.0, 3.0, 0.5, 2.0)
+	AddSetting(15, 0, "Supreme", "Radius", "Raio da aura", "Aura radius", "Alcance do fogo em volta de ti (100 = cerca de 1,4 m).", "Reach of the fire around you (100 = about 1.4 m).", 100.0, 600.0, 25.0, 300.0)
+	AddSetting(15, 0, "Supreme", "DamagePerSecond", "Dano de fogo por segundo", "Fire damage per second", "Dano de vida aos inimigos hostis no raio.", "Health damage to hostile enemies in range.", 0.0, 60.0, 1.0, 8.0)
 	AddSetting(11, 1, "Diagnostics", "Enabled", "Diagnostico no log", "Diagnostics in log", "Escreve o que acontece em NahIDWin.log.", "Writes what happens to NahIDWin.log.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(11, 1, "Diagnostics", "LogPlayerEvents", "Registar eventos que afetam o jogador", "Log events hitting the player", "Ajuda a descobrir a queda a meio dos combos.", "Helps find the fall during combos.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(12, 1, "Block", "DrainEnabled", "Bloqueio gasta estamina do atacante", "Block drains attacker stamina", "Bloqueio normal (sem parry) gasta estamina do atacante. Sem stagger.", "Normal block (no parry) drains the attacker's stamina. No stagger.", 0.0, 1.0, 1.0, 1.0)
@@ -714,15 +728,33 @@ string Function IniChoiceName(string key, int v)
 EndFunction
 
 Function DrawBlock(int blk, string en, string pt)
-	Hdr(en, pt)
+	; cabecalho retratil: clicar abre ou fecha o bloco (estado guardado no .ini, seccao MenuOpen)
+	float openDef = 0.0
+	if blk == 3
+		openDef = 1.0
+	endif
+	bool isOpen = NahIDWinNative.IniGetF("MenuOpen", "B" + blk, openDef) > 0.5
+	string sign = "[+] "
+	if isOpen
+		sign = "[-] "
+	endif
+	Track(AddTextOption(Orange(sign + Tr(en, pt)), "", 0), 10, blk)
+	if !isOpen
+		return
+	endif
+	bool hide = false
 	int i = 0
 	while i < count
-		if sBlk[i] == blk
+		if sBlk[i] == blk && !hide
 			float cur = NahIDWinNative.IniGetF(sSec[i], sKey[i], sDef[i])
 			if sType[i] == 2
 				Track(AddMenuOption(LabelOf(i), IniChoiceName(sKey[i], cur as int), sFlag), 9, i)
 			elseif sType[i] == 1
 				Track(AddToggleOption(LabelOf(i), cur > 0.5, sFlag), 2, i)
+				; funcao desligada: as opcoes dela ficam escondidas
+				if sKey[i] == "Enabled" && cur < 0.5
+					hide = true
+				endif
 			else
 				Track(AddSliderOption(LabelOf(i), cur, FormatFor(i), sFlag), 3, i)
 			endif
@@ -831,6 +863,8 @@ Function DrawPage2()
 	DrawBlock(12, "Normal block (ours)", "Bloqueio normal (nosso)")
 	DrawBlock(10, "HUD (TrueHUD bar)", "HUD (barra do TrueHUD)")
 	DrawBlock(13, "HUD (own bars)", "HUD (barras proprias)")
+	DrawBlock(14, "Extra Lives", "Vidas extra")
+	DrawBlock(15, "Supreme Rage (fire aura)", "Supremo Rage (aura de fogo)")
 	DrawBlock(11, "System", "Sistema")
 EndFunction
 
@@ -851,6 +885,17 @@ Event OnOptionSelect(int a_option)
 		endif
 		NahIDWinNative.IniSetF("Menu", "Language", nv)
 		ForcePageReset()
+	elseif k == 10
+		float od = 0.0
+		if r == 3
+			od = 1.0
+		endif
+		float ov = 1.0
+		if NahIDWinNative.IniGetF("MenuOpen", "B" + r, od) > 0.5
+			ov = 0.0
+		endif
+		NahIDWinNative.IniSetF("MenuOpen", "B" + r, ov)
+		ForcePageReset()
 	elseif k == 2
 		float cur = NahIDWinNative.IniGetF(sSec[r], sKey[r], sDef[r])
 		float nv2 = 1.0
@@ -859,6 +904,9 @@ Event OnOptionSelect(int a_option)
 		endif
 		NahIDWinNative.IniSetF(sSec[r], sKey[r], nv2)
 		SetToggleOptionValue(a_option, nv2 > 0.5)
+		if sKey[r] == "Enabled"
+			ForcePageReset()
+		endif
 	elseif k == 4
 		float g = 1.0
 		if GVal(r) > 0.5
@@ -1064,6 +1112,8 @@ Event OnOptionHighlight(int a_option)
 		SetInfoText(Tr("Turns Inpa Sekiro and NahIDWin on/off together. Do it out of combat.", "Liga/desliga o Inpa Sekiro e o NahIDWin em conjunto. Faz isto fora de combate."))
 	elseif k == 7
 		SetInfoText(Tr("Switch between English and Portugues (BR).", "Alterna entre English e Portugues (BR)."))
+	elseif k == 10
+		SetInfoText(Tr("Click to open or close this section.", "Clica para abrir ou fechar esta seccao."))
 	elseif k == 2 || k == 3 || k == 9
 		SetInfoText(Tr(sInfoEN[r], sInfoPT[r]))
 	elseif k == 4 || k == 5 || k == 6

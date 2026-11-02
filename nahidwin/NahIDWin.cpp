@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.13.0 (empurrao corrigido; escudo de stagger na furia; barras estilo Sekiro com posicao;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.14.0 (vidas extra do jogador; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -246,6 +246,13 @@ namespace
 		float	rageLifeCost;			// % da vida maxima (custo em vida)
 		int		rageZeroStamina;		// a estamina do jogador nao desce durante a furia
 		int		rageStaggerShield;		// 1 = sem stagger durante a furia
+		// vidas extra do jogador
+		int		livesEnabled, livesLevel2, livesLevel3;
+		float	livesHealthPct, livesGoldPct, livesInvuln;
+		// Supremo Rage (aura)
+		int		supEnabled, supKey;
+		float	supSeconds, supCooldown, supCostPerSec, supRadius, supDps;
+		int		iconsAlways;
 		int		rageNpc;				// NPCs ativam sozinhos
 		float	rageNpcPosture;			// ativa quando a postura passa desta fracao
 		float	rageNpcPoise;			// ... ou o poise desce abaixo desta fracao
@@ -445,6 +452,20 @@ namespace
 		c.rageNpcDamageBonus = IniF("Rage", "NPCDamageBonus", 10.0f);
 		c.rageLifeCost = IniF("Rage", "LifeCostPercent", 20.0f);
 		c.rageStaggerShield = IniI("Rage", "StaggerImmune", 1);
+		c.livesEnabled	= IniI("Lives", "Enabled", 1);
+		c.livesLevel2	= IniI("Lives", "Level2", 30);
+		c.livesLevel3	= IniI("Lives", "Level3", 60);
+		c.livesHealthPct = IniF("Lives", "HealthPercent", 50.0f);
+		c.livesGoldPct	= IniF("Lives", "GoldLossPercent", 25.0f);
+		c.livesInvuln	= IniF("Lives", "InvulnSeconds", 3.0f);
+		c.supEnabled	= IniI("Supreme", "Enabled", 1);
+		c.supKey		= IniI("Supreme", "Key", 35);
+		c.supSeconds	= IniF("Supreme", "DurationSeconds", 10.0f);
+		c.supCooldown	= IniF("Supreme", "CooldownSeconds", 500.0f);
+		c.supCostPerSec	= IniF("Supreme", "CostPercentPerSecond", 2.0f);
+		c.supRadius		= IniF("Supreme", "Radius", 300.0f);
+		c.supDps		= IniF("Supreme", "DamagePerSecond", 8.0f);
+		c.iconsAlways	= IniI("HUD", "IconsAlways", 1);
 		c.rageZeroStamina	= IniI("Rage", "ZeroStamina", 1);
 		c.rageNpc			= IniI("Rage", "NPCs", 1);
 		c.rageNpcPosture	= IniF("Rage", "NPCPostureTrigger", 0.8f);
@@ -850,6 +871,10 @@ namespace
 
 	// ---- escudo de stagger (furia): filtra os pedidos de reacao a golpe enviados ao grafo de animacao
 	volatile LONG	g_shieldBlocked = 0;
+	volatile LONG	g_livesUsed = 0;		// vidas extra gastas desde o ultimo sono
+	volatile LONG	g_lifePending = 0;
+	DWORD			g_invulnUntil = 0;
+	DWORD			g_supUntil = 0, g_supReadyAt = 0, g_supLastCost = 0, g_supLastHit = 0;
 	volatile LONG	g_ownNotify = 0;		// 1 = chamada vinda do proprio mod (nunca filtrar)
 	void EnsureNotifyHook(TESObjectREFR * ref);
 	bool CallNotify(void * holder, void * fn, const BSFixedString * name, bool * result)
@@ -1348,14 +1373,24 @@ namespace
 	}
 
 	// Furia de um NPC: avisa a ponte (sender = o NPC, numArg = duracao em segundos) para mostrar o brilho/simbolo.
-	void SendRageEvent(TESObjectREFR * ref, float seconds)
+	void SendLifeEvent(TESObjectREFR * ref, int used)
+	{
+		if(!ref) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_Life", "", (float)used, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
+	}
+
+	void SendRageEvent(TESObjectREFR * ref, float seconds, const char * tag = "")
 	{
 		if(!ref) return;
 		EnsureNotifyHook(ref);
 		EventDispatcher<PoiseModEvent> * d = NULL;
 		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
 		if(!d) return;
-		PoiseModEvent evn("NahIDWin_Rage", "", seconds, (TESForm *)ref);
+		PoiseModEvent evn("NahIDWin_Rage", tag, seconds, (TESForm *)ref);
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
@@ -1374,6 +1409,7 @@ namespace
 		g_playerBarValid = false;
 		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
+		g_livesUsed = 0; g_invulnUntil = 0; g_supUntil = 0; g_supReadyAt = 0;
 		_MESSAGE("%s: cleared %d tracked actors", why, (int)n);
 	}
 
@@ -1869,6 +1905,22 @@ namespace
 
 	// amount < 0 = dano. Devolve o dano ajustado. Sem objetos com destrutor: pode usar __try.
 	volatile LONG g_rageCostBusy = 0;	// o custo de vida da furia nao e reduzido pela propria furia
+
+	// ---- vidas extra: 2a vida no nivel Level2, 3a no nivel Level3; enchem ao dormir (o Papyrus repoe g_livesUsed)
+	int LivesUnlocked(Actor * a)
+	{
+		if(!g_cfg.livesEnabled || !a) return 0;
+		const int lvl = (int)CALL_MEMBER_FN(a, GetLevel)();
+		int n = 0;
+		if(lvl >= g_cfg.livesLevel2) n++;
+		if(lvl >= g_cfg.livesLevel3) n++;
+		return n;
+	}
+	int LivesAvailable(Actor * a)
+	{
+		const int u = LivesUnlocked(a) - (int)g_livesUsed;
+		return u > 0 ? u : 0;
+	}
 	float AdjustHealthDamage(Actor * self, Actor * attacker, float amount)
 	{
 		if(!(amount < 0.0f) || !(amount > -1.0e9f) || !g_cfg.enabled || g_rageCostBusy) return amount;
@@ -1930,6 +1982,27 @@ namespace
 				Unlock();
 				result = amount * mult;
 			}
+			if(isPlayer && g_cfg.livesEnabled)
+			{
+				if(result < 0.0f && now < g_invulnUntil)
+				{
+					result = 0.0f;
+					why = "life invulnerability";
+				}
+				else if(result < 0.0f)
+				{
+					float curHp = 0.0f, maxHp = 0.0f;
+					if(ReadAV(self, 24, &curHp, &maxHp) && curHp + result <= 0.5f && LivesAvailable(self) > 0)
+					{
+						result = -(curHp - 1.0f);
+						if(result > 0.0f) result = 0.0f;
+						InterlockedIncrement(&g_livesUsed);
+						g_invulnUntil = now + (DWORD)(g_cfg.livesInvuln * 1000.0f);
+						InterlockedExchange(&g_lifePending, 1);
+						why = "extra life";
+					}
+				}
+			}
 			if(isPlayer && g_cfg.diag && g_cfg.logPlayerDamage && g_hdPlayerLogged < 150)
 			{
 				InterlockedIncrement(&g_hdPlayerLogged);
@@ -1959,10 +2032,26 @@ namespace
 		amount = AdjustHealthDamage(self, attacker, amount);
 		g_origHD[1](self, attacker, amount);
 	}
+	// Depois de o dano que mataria o jogador ter sido limitado a deixar 1 de vida: devolve a vida e avisa o Papyrus (ouro, aviso).
+	void ReviveExtraLife(Actor * self)
+	{
+		InterlockedExchange(&g_lifePending, 0);
+		float cur = 0.0f, mx = 0.0f;
+		if(ReadAV(self, 24, &cur, &mx))
+		{
+			float target = mx * g_cfg.livesHealthPct / 100.0f;
+			if(target < 1.0f) target = 1.0f;
+			if(target > cur) RestoreAV(self, 24, target - cur);
+		}
+		_MESSAGE("EXTRA LIFE used (#%d): health back to %.0f%%, invulnerable %.1f s", (int)g_livesUsed, g_cfg.livesHealthPct, g_cfg.livesInvuln);
+		SendLifeEvent((TESObjectREFR *)self, (int)g_livesUsed);
+	}
+
 	void __fastcall HookHD_Player(Actor * self, void *, Actor * attacker, float amount)
 	{
 		amount = AdjustHealthDamage(self, attacker, amount);
 		g_origHD[2](self, attacker, amount);
+		if(g_lifePending) ReviveExtraLife(self);
 	}
 
 	bool IsExecutableAddr(const void * p)
@@ -2177,6 +2266,121 @@ namespace
 		SendRageEvent((TESObjectREFR *)p, g_cfg.rageSeconds);
 	}
 
+	// ------------------------------------------------------------------ Supremo Rage (aura): fuego em redor, custo por segundo
+	// Sem objetos com destrutor: pode usar __try. Queima os inimigos hostis dentro do raio, na celula do jogador.
+	int SupremeBurn(Actor * pl, float radius, float dmg)
+	{
+		int n = 0;
+		__try
+		{
+			TESObjectCELL * cell = pl->parentCell;
+			if(!cell) return 0;
+			TESObjectREFR ** arr = cell->objectList.arr.entries;
+			const UInt32 cnt = cell->objectList.count;
+			if(!arr) return 0;
+			const float px = pl->pos.x, py = pl->pos.y, pz = pl->pos.z;
+			for(UInt32 i = 0; i < cnt && i < 8000 && n < 24; i++)
+			{
+				TESObjectREFR * r = arr[i];
+				if(!r || r == (TESObjectREFR *)pl || r->formType != kFormType_Character) continue;
+				const float dx = r->pos.x - px, dy = r->pos.y - py, dz = r->pos.z - pz;
+				if(dx * dx + dy * dy + dz * dz > radius * radius) continue;
+				Actor * a = (Actor *)r;
+				ActorStats st;
+				if(!ReadActorStats(a, &st) || !st.alive) continue;
+				if(!CALL_MEMBER_FN(a, IsHostileToActor)(pl)) continue;
+				float cur = 0.0f, mx = 0.0f;
+				if(!ReadAV(a, 24, &cur, &mx) || cur <= 0.0f) continue;
+				RestoreAV(a, 24, -dmg);
+				n++;
+			}
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+		}
+		return n;
+	}
+
+	void TickSupreme(DWORD now)
+	{
+		if(!g_cfg.supEnabled || now >= g_supUntil) return;
+		PlayerCharacter * p = Engine::Player();
+		if(!p) return;
+		if(now - g_supLastHit >= 500)
+		{
+			g_supLastHit = now;
+			if(g_cfg.supDps > 0.0f) SupremeBurn((Actor *)p, g_cfg.supRadius, g_cfg.supDps * 0.5f);
+		}
+		if(now - g_supLastCost >= 1000)
+		{
+			g_supLastCost = now;
+			float cur = 0.0f, mx = 0.0f;
+			if(ReadAV((Actor *)p, 24, &cur, &mx))
+			{
+				float cost = mx * g_cfg.supCostPerSec / 100.0f;
+				if(cost > cur - 1.0f) cost = cur - 1.0f;	// nunca mata o jogador
+				if(cost > 0.0f)
+				{
+					g_rageCostBusy = 1;
+					RestoreAV((Actor *)p, 24, -cost);
+					g_rageCostBusy = 0;
+				}
+			}
+		}
+	}
+
+	void TrySupremePlayer()
+	{
+		if(!g_cfg.enabled || !g_cfg.rageEnabled || !g_cfg.supEnabled) return;
+		PlayerCharacter * p = Engine::Player();
+		if(!p) return;
+		ActorStats s;
+		if(!ReadActorStats((Actor *)p, &s) || !s.alive) return;
+		EnsureNotifyHook((TESObjectREFR *)p);
+		const DWORD now = GetTickCount();
+		if(now < g_supUntil)
+		{
+			// segunda pressao: desliga e comeca a recarga
+			g_supUntil = now;
+			Lock();
+			{
+				PoiseState & st = FindOrCreate(s.id, ComputeMax(s), ComputeMaxPosture(s), now);
+				st.rageUntil = now;
+			}
+			Unlock();
+			g_supReadyAt = now + (DWORD)(g_cfg.supCooldown * 1000.0f);
+			SendRageEvent((TESObjectREFR *)p, 0.0f, "supreme");
+			_MESSAGE("SUPREME RAGE (player): turned off, cooldown %.0f s", g_cfg.supCooldown);
+			return;
+		}
+		bool ok = false;
+		DWORD left = 0;
+		Lock();
+		{
+			PoiseState & st = FindOrCreate(s.id, ComputeMax(s), ComputeMaxPosture(s), now);
+			if(now >= g_supReadyAt && now >= st.bleedUntil && now >= st.rageUntil)
+			{
+				st.rageUntil = now + (DWORD)(g_cfg.supSeconds * 1000.0f);
+				ok = true;
+			}
+			else if(g_supReadyAt > now) left = g_supReadyAt - now;
+		}
+		Unlock();
+		if(!ok)
+		{
+			if(g_cfg.diag) _MESSAGE("SUPREME RAGE (player): refused (cooldown %.0f s left, or another rage/bleedout active)", left / 1000.0f);
+			return;
+		}
+		g_supUntil = now + (DWORD)(g_cfg.supSeconds * 1000.0f);
+		g_supReadyAt = g_supUntil + (DWORD)(g_cfg.supCooldown * 1000.0f);
+		g_supLastCost = now;
+		g_supLastHit = now;
+		InterlockedIncrement(&g_rages);
+		_MESSAGE("SUPREME RAGE (player): active for %.1f s, cost %.1f%%/s of health, fire %.1f dmg/s in radius %.0f, cooldown %.0f s", g_cfg.supSeconds, g_cfg.supCostPerSec, g_cfg.supDps, g_cfg.supRadius, g_cfg.supCooldown);
+		HudFlash((TESObjectREFR *)p);
+		SendRageEvent((TESObjectREFR *)p, g_cfg.supSeconds, "supreme");
+	}
+
 	bool PlayerRaging()
 	{
 		PlayerCharacter * p = Engine::Player();
@@ -2261,6 +2465,10 @@ namespace
 			{
 				TryRagePlayer();
 			}
+			else if(down && g_cfg.supEnabled && g_cfg.rageEnabled && ev->deviceType == kDeviceType_Keyboard && be->keyMask == (UInt32)g_cfg.supKey && !AnyMenuOpen())
+			{
+				TrySupremePlayer();
+			}
 		}
 	}
 
@@ -2289,6 +2497,13 @@ namespace
 		_MESSAGE("papyrus: NahIDWinBridge script started and registered for NahIDWin_Stagger (#%d)", (int)g_scriptReady);
 	}
 
+	void N_SetLivesUsed(StaticFunctionTag *, SInt32 n)
+	{
+		if(n < 0) n = 0;
+		if(n > 2) n = 2;
+		g_livesUsed = n;
+		_MESSAGE("papyrus: extra lives used set to %d", (int)n);
+	}
 	void N_Ack(StaticFunctionTag *, SInt32 packed)
 	{
 		const DWORD now = GetTickCount();
@@ -2435,6 +2650,7 @@ namespace
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, float>("GetKnockbackForce", "NahIDWinNative", N_GetKnockbackForce, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("BleedDone", "NahIDWinNative", N_BleedDone, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("ScriptReady", "NahIDWinNative", N_ScriptReady, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("SetLivesUsed", "NahIDWinNative", N_SetLivesUsed, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));
 		_MESSAGE("papyrus functions registered (NahIDWinNative)");
 		return true;
@@ -2529,6 +2745,7 @@ namespace
 		const bool ready = g_cfg.wEnabled && g_dataLoaded && Engine::Player() && !AnyMenuOpen();
 		PutBool(o, "ready", ready);
 		if(!ready) return;
+		TickSupreme(now);
 
 		BarInfo pi = { 1.0f, 0, 1.0f, false, 0.0f };
 		bool pOn = false;
@@ -2538,6 +2755,14 @@ namespace
 			pOn = g_cfg.wPlayerAlways || now < g_wActiveUntil;
 		}
 		PutBool(o, "pOn", pOn);
+		{
+			Actor * pa = (Actor *)Engine::Player();
+			PutNum(o, "lifeUnl", LivesUnlocked(pa));
+			PutNum(o, "lifeAvail", LivesAvailable(pa));
+			PutBool(o, "supOn", g_cfg.supEnabled && g_cfg.rageEnabled);
+			PutNum(o, "supState", now < g_supUntil ? 2 : (now < g_supReadyAt ? 1 : 0));
+			PutBool(o, "iconsOn", g_cfg.iconsAlways || pOn);
+		}
 		PutNum(o, "sw", g_cfg.wScreenW); PutNum(o, "sh", g_cfg.wScreenH); PutNum(o, "style", g_cfg.wStyle);
 		PutNum(o, "pAH", g_cfg.wPosH); PutNum(o, "pAV", g_cfg.wPosV); PutNum(o, "pSX", g_cfg.wShiftX); PutNum(o, "pSY", g_cfg.wShiftY);
 		PutNum(o, "tAH", g_cfg.wTPosH); PutNum(o, "tAV", g_cfg.wTPosV); PutNum(o, "tSX", g_cfg.wTShiftX); PutNum(o, "tSY", g_cfg.wTShiftY);

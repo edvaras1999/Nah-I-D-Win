@@ -35,3 +35,6 @@ Function IniSetF(string section, string key, float value) global native
 
 ; Guarda o inicio de um golpe forte (a DLL evita cobrar duas vezes). Compatibilidade com versoes antigas.
 Function PowerStart() global native
+
+; Vidas extra do jogador: quantas ja foram gastas desde o ultimo sono (o Bridge guarda no save e repoe a DLL ao carregar).
+Function SetLivesUsed(int n) global native

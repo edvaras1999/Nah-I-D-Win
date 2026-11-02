@@ -13,3 +13,5 @@ bool Function AddSpell(Spell akSpell, bool abVerbose = true) native
 int Function GetFactionReaction(Actor akOther) native
 bool Function RemoveSpell(Spell akSpell) native
 bool Function DispelSpell(Spell akSpell) native
+ObjectReference Function GetFurnitureReference() native
+int Function GetSleepState() native
