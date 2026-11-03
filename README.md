@@ -122,3 +122,10 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **Essencial como o SkyTweak**: a flag e posta pelo Papyrus (`GetActorBase().SetEssential`) assim que o save carrega e o jogador tem vidas (e retirada quando acabam). A DLL so avisa por evento (reenvia de 10 em 10 s). Bosses: marcados no 1o golpe; quando a vida acaba o jogo faz o bleedout, o script repoe a vida, tira a flag e volta ao combate.
 - **Inimigos voltam a lutar** quando o jogador revive (os ultimos 4 atacantes recebem `StartCombat`).
 - **Sem empurrao em gigantes/dragoes** (`[Knockback] VictimMassMax=3`): o ragdoll deles ficava preso no ar a andar para tras.
+
+## v0.15.3
+
+- **Bleedout nao e cortado**: durante o bleedout verdadeiro (jogador essencial) a nossa logica ja tratava os golpes como normais e disparava stagger leve nativo, o que cortava a animacao. Agora o jogador fica "em bleedout" tambem para a DLL (sem stagger, sem poise/postura) durante o tempo todo (minimo 5 s, como o SkyTweak).
+- **Sem forcar combate**: removido o `StartCombat` aos atacantes. Ordem igual ao SkyTweak: `StopCombatAlarm` no inicio do bleedout, espera, `ResetHealthAndLimbs`.
+- **Vida depois de reviver**: o ajuste para `HealthPercent` era anulado pela invulnerabilidade (ficava a 100%); corrigido.
+- A marca essencial tambem e verificada a cada dano ao jogador, alem do relogio do HUD.

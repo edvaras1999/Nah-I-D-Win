@@ -38,7 +38,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.15.2: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.15.3: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -160,25 +160,15 @@ Function OnNahLife(string eventName, string strArg, float numArg, Form sender)
 	; Metodo do SkyTweak: o jogo fez o bleedout verdadeiro (jogador essencial). Espera, acaba o combate e repoe a vida.
 	if NahIDWinNative.LifeMethod() == 1
 		float secs = NahIDWinNative.GetBleedSeconds()
-		if secs < 3.0
-			secs = 3.0
+		if secs < 5.0
+			secs = 5.0
 		endif
 		NahIDWinNative.Log("extra life: bleedout (game) for " + secs + " s")
-		Utility.Wait(secs)
+		; Igual ao SkyTweak: acaba o alarme de combate logo no inicio do bleedout, espera, repoe a vida.
 		pl.StopCombatAlarm()
+		Utility.Wait(secs)
 		pl.ResetHealthAndLimbs()
 		NahIDWinNative.LifeRecover()
-		int ri = 0
-		while ri < 4
-			int rid = NahIDWinNative.RecentAttacker(ri)
-			if rid != 0
-				Actor ra = Game.GetForm(rid) as Actor
-				if ra && !ra.IsDead()
-					ra.StartCombat(pl)
-				endif
-			endif
-			ri += 1
-		endwhile
 		NahIDWinNative.Log("extra life: health restored, standing up")
 	endif
 	Spell glow = Game.GetFormFromFile(0x00000841, "NahIDWin.esp") as Spell

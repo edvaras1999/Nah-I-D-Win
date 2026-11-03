@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.15.2 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.15.3 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -2005,6 +2005,7 @@ namespace
 			const UInt32 id = self->formID;
 			const DWORD now = GetTickCount();
 			const bool isPlayer = (id == 0x14);
+			if(isPlayer) SyncEssential();
 			float result = amount;
 			const char * why = "";
 
@@ -2109,7 +2110,20 @@ namespace
 						if(g_cfg.livesEssential)
 						{
 							// o dano passa inteiro: o jogo, vendo o jogador essencial (marcado desde o load), faz o bleedout verdadeiro
-							g_invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + 3.0f + g_cfg.livesInvuln) * 1000.0f);
+							const float bs = g_cfg.bleedSeconds < 5.0f ? 5.0f : g_cfg.bleedSeconds;
+							g_invulnUntil = now + (DWORD)((bs + 2.0f + g_cfg.livesInvuln) * 1000.0f);
+							// o jogador fica "em bleedout" tambem para a nossa logica: sem stagger leve nem golpes a contar (isso cortava o bleedout)
+							Lock();
+							{
+								StateMap::iterator ip = g_states.find(id);
+								if(ip != g_states.end())
+								{
+									ip->second.bleedUntil = now + (DWORD)((bs + 1.0f) * 1000.0f);
+									ip->second.bleedImmuneUntil = ip->second.bleedUntil + (DWORD)(g_cfg.bleedExtraImmune * 1000.0f);
+									ip->second.pCur = 0.0f; ip->second.cur = ip->second.max;
+								}
+							}
+							Unlock();
 							why = "extra life (essential bleedout)";
 						}
 						else
@@ -2823,8 +2837,9 @@ namespace
 		{
 			float target = mx * g_cfg.livesHealthPct / 100.0f;
 			if(target < 1.0f) target = 1.0f;
-			if(target < cur) RestoreAV(pl, 24, target - cur);
-			else if(target > cur) RestoreAV(pl, 24, target - cur);
+			InterlockedExchange(&g_rageCostBusy, 1);
+			if(target != cur) RestoreAV(pl, 24, target - cur);
+			InterlockedExchange(&g_rageCostBusy, 0);
 		}
 		g_invulnUntil = GetTickCount() + (DWORD)(g_cfg.livesInvuln * 1000.0f);
 		SyncEssential();
