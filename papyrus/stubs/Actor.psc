@@ -17,3 +17,5 @@ ObjectReference Function GetFurnitureReference() native
 int Function GetSleepState() native
 Function ResetHealthAndLimbs() native
 Function StopCombatAlarm() native
+ActorBase Function GetActorBase() native
+Function StartCombat(Actor akTarget) native

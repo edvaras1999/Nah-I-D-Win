@@ -49,3 +49,7 @@ bool Function BleedAccepted(int formId) global native
 int Function LifeMethod() global native
 Function LifeRecover() global native
 Function SyncEssential() global native
+
+; Boss: repoe a vida (HealthPercent do ini). Atacantes recentes do jogador (formID, 0 = nenhum): voltam a lutar ao reviver.
+Function BossRecover(Actor b) global native
+int Function RecentAttacker(int idx) global native

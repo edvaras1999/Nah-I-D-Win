@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.15.1 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.15.2 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -207,6 +207,7 @@ namespace
 		int		kbOnPower;				// golpe forte (inclui o de corrida e o carregado)
 		int		kbOnGiant;				// atacante de raca grande (massa >= kbGiantMass)
 		float	kbGiantMass;
+		float	kbVictimMassMax;		// vitima de massa >= isto nao e empurrada (gigantes, dragoes: o ragdoll deles bloqueia)
 		int		kbOnHeavyWeapon;		// arma de duas maos ou pesada
 		float	kbHeavyWeight;
 
@@ -418,6 +419,7 @@ namespace
 		c.kbOnPower			= IniI("Knockback", "OnPowerAttack", 1);
 		c.kbOnGiant			= IniI("Knockback", "OnGiantCreature", 1);
 		c.kbGiantMass		= IniF("Knockback", "GiantMassMin", 3.0f);
+		c.kbVictimMassMax	= IniF("Knockback", "VictimMassMax", 3.0f);
 		c.kbOnHeavyWeapon	= IniI("Knockback", "OnHeavyWeapon", 0);
 		c.kbHeavyWeight		= IniF("Knockback", "HeavyWeaponMinWeight", 15.0f);
 
@@ -885,6 +887,11 @@ namespace
 	volatile LONG	g_livesUsed = 0;		// vidas extra gastas desde o ultimo sono
 	volatile LONG	g_lifePending = 0;
 	DWORD			g_invulnUntil = 0;
+	LONG			g_essSent = -1;
+	DWORD			g_essLast = 0;
+	std::set<UInt32> g_bossMarked;
+	struct RecentAtk { UInt32 id; DWORD tick; };
+	RecentAtk		g_recentAtk[4];
 	DWORD			g_supUntil = 0, g_supReadyAt = 0, g_supLastCost = 0, g_supLastHit = 0;
 	volatile LONG	g_ownNotify = 0;		// 1 = chamada vinda do proprio mod (nunca filtrar)
 	void EnsureNotifyHook(TESObjectREFR * ref);
@@ -1422,6 +1429,7 @@ namespace
 		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
 		g_livesUsed = 0; g_invulnUntil = 0; g_supUntil = 0; g_supReadyAt = 0;
+		g_essSent = -1; g_essLast = 0; g_bossMarked.clear(); memset(g_recentAtk, 0, sizeof(g_recentAtk));
 		_MESSAGE("%s: cleared %d tracked actors", why, (int)n);
 	}
 
@@ -1787,6 +1795,7 @@ namespace
 			if(g_cfg.kbOnPower && heavyHit) heavy = true;
 			if(g_cfg.kbOnGiant && h.attackerIsActor && h.attacker.mass >= g_cfg.kbGiantMass) heavy = true;
 			if(g_cfg.kbOnHeavyWeapon && h.sourceKind == 1 && (h.weaponType == 5 || h.weaponType == 6 || h.weaponWeight >= g_cfg.kbHeavyWeight)) heavy = true;
+			if(heavy && h.victim.mass >= g_cfg.kbVictimMassMax && g_cfg.kbVictimMassMax > 0.0f) heavy = false;
 			if(heavy) kind = 5;
 		}
 
@@ -1933,24 +1942,43 @@ namespace
 		const int u = LivesUnlocked(a) - (int)g_livesUsed;
 		return u > 0 ? u : 0;
 	}
-	// Marca/desmarca o jogador como essencial (flag 0x02 do ator-base), como o SkyTweak: assim o jogo faz o bleedout verdadeiro.
-	void SetPlayerEssential(bool on)
+	// Essencial: quem marca a flag e o Papyrus (GetActorBase().SetEssential), exatamente como o SkyTweak. Aqui so avisamos.
+	void SendEssentialEvent(TESObjectREFR * ref, bool on)
 	{
-		__try
-		{
-			Actor * pl = (Actor *)Engine::Player();
-			if(!pl || !pl->baseForm || pl->baseForm->formType != kFormType_NPC) return;
-			UInt32 & fl = ((TESNPC *)pl->baseForm)->actorData.flags;
-			if(on) fl |= 0x02; else fl &= ~0x02u;
-		}
-		__except(EXCEPTION_EXECUTE_HANDLER) {}
+		if(!ref) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_Essential", "", on ? 1.0f : 0.0f, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
-	// Essencial so enquanto ha vidas (e nao enquanto dura o bleedout da vida gasta).
+	// Essencial so enquanto ha vidas (e durante o bleedout da vida gasta). Reenvia de 10 em 10 s (o evento pode perder-se logo apos o load).
 	void SyncEssential()
 	{
 		if(!g_cfg.enabled || !g_cfg.livesEnabled || !g_cfg.livesEssential) return;
-		const bool want = LivesAvailable((Actor *)Engine::Player()) > 0 || (LONG)(GetTickCount() - g_invulnUntil) < 0;
-		SetPlayerEssential(want);
+		Actor * pl = (Actor *)Engine::Player();
+		if(!pl) return;
+		const DWORD now = GetTickCount();
+		const LONG want = (LivesAvailable(pl) > 0 || (LONG)(now - g_invulnUntil) < 0) ? 1 : 0;
+		if(want != g_essSent || now - g_essLast > 10000)
+		{
+			if(want != g_essSent) _MESSAGE("essential mark (player): %d", (int)want);
+			g_essSent = want; g_essLast = now;
+			SendEssentialEvent((TESObjectREFR *)pl, want != 0);
+		}
+	}
+	// Atacantes recentes do jogador: ao reviver, voltam a lutar (o SkyTweak consegue isto com StopCombatAlarm).
+	void NoteAttackerOfPlayer(UInt32 id, DWORD now)
+	{
+		if(id == 0 || id == 0x14) return;
+		int slot = -1, oldest = 0;
+		for(int i = 0; i < 4; i++)
+		{
+			if(g_recentAtk[i].id == id) { slot = i; break; }
+			if(g_recentAtk[i].tick < g_recentAtk[oldest].tick) oldest = i;
+		}
+		if(slot < 0) slot = oldest;
+		g_recentAtk[slot].id = id; g_recentAtk[slot].tick = now;
 	}
 	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
 	bool IsBossActor(Actor * a)
@@ -2044,22 +2072,27 @@ namespace
 				if(inv) { result = 0.0f; why = "boss invulnerable"; }
 				else if(lose && IsBossActor(self))
 				{
+					// marca-o como essencial logo no 1o golpe (o jogo faz o bleedout verdadeiro quando a vida acaba)
+					bool first = false;
+					Lock();
+					first = g_bossMarked.insert(id).second;
+					Unlock();
+					if(first) { SendEssentialEvent((TESObjectREFR *)self, true); _MESSAGE("essential mark (boss %08X): 1", id); }
 					float curHp = 0.0f, maxHp = 0.0f;
-					if(ReadAV(self, 24, &curHp, &maxHp) && curHp + result <= 0.5f)
+					if(ReadAV(self, 24, &curHp, &maxHp) && curHp + result <= 0.5f && !first)
 					{
-						result = -(curHp - 1.0f);
-						if(result > 0.0f) result = 0.0f;
 						Lock();
 						{
 							StateMap::iterator ib = g_states.find(id);
-							if(ib != g_states.end()) { ib->second.bossUsed = 1; ib->second.invulnUntil = now + 60000; }
+							if(ib != g_states.end()) { ib->second.bossUsed = 1; ib->second.invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + 3.0f + g_cfg.bossInvuln) * 1000.0f); }
 						}
 						Unlock();
 						InterlockedExchange(&g_bossPending, (LONG)id);
-						why = "boss life";
+						why = "boss life (essential bleedout)";
 					}
 				}
 			}
+			if(isPlayer && attacker && attacker != self) NoteAttackerOfPlayer(attacker->formID, now);
 			if(isPlayer && g_cfg.livesEnabled)
 			{
 				if(result < 0.0f && now < g_invulnUntil)
@@ -2075,8 +2108,7 @@ namespace
 						InterlockedIncrement(&g_livesUsed);
 						if(g_cfg.livesEssential)
 						{
-							// o dano passa inteiro: o jogo, vendo o jogador essencial, faz o bleedout verdadeiro
-							SetPlayerEssential(true);
+							// o dano passa inteiro: o jogo, vendo o jogador essencial (marcado desde o load), faz o bleedout verdadeiro
 							g_invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + 3.0f + g_cfg.livesInvuln) * 1000.0f);
 							why = "extra life (essential bleedout)";
 						}
@@ -2164,27 +2196,16 @@ namespace
 		g_invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + g_cfg.livesInvuln) * 1000.0f);
 		SendLifeEvent((TESObjectREFR *)self, (int)g_livesUsed);
 	}
-	// Vida do boss gasta: volta com a vida (HealthPercent) e cai em bleedout, como os essenciais.
+	// Vida do boss gasta: o jogo fez o bleedout (boss essencial); o script espera, repoe a vida e volta ao combate.
 	void ReviveBoss(Actor * self, UInt32 id)
 	{
 		InterlockedExchange(&g_bossPending, 0);
-		float cur = 0.0f, mx = 0.0f;
-		if(ReadAV(self, 24, &cur, &mx))
-		{
-			float target = mx * g_cfg.bossHealthPct / 100.0f;
-			if(target < 1.0f) target = 1.0f;
-			if(target > cur) RestoreAV(self, 24, target - cur);
-		}
-		const DWORD now = GetTickCount();
-		Lock();
-		{
-			StateMap::iterator ib = g_states.find(id);
-			if(ib != g_states.end()) ib->second.invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + g_cfg.bossInvuln) * 1000.0f);
-		}
-		Unlock();
-		_MESSAGE("BOSS LIFE used: %08X back to %.0f%% health, bleedout", id, g_cfg.bossHealthPct);
-		StartForcedBleed(self);
-		SendLifeEvent((TESObjectREFR *)self, 1);
+		_MESSAGE("BOSS LIFE used: %08X (essential bleedout; the script restores the health afterwards)", id);
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_BossLife", "", g_cfg.bleedSeconds, (TESForm *)self);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
 	void __fastcall HookHD_Player(Actor * self, void *, Actor * attacker, float amount)
@@ -2817,6 +2838,24 @@ namespace
 	{
 		SyncEssential();
 	}
+	void N_BossRecover(StaticFunctionTag *, Actor * b)
+	{
+		if(!b) return;
+		float cur = 0.0f, mx = 0.0f;
+		if(ReadAV(b, 24, &cur, &mx))
+		{
+			float target = mx * g_cfg.bossHealthPct / 100.0f;
+			if(target < 1.0f) target = 1.0f;
+			if(target > cur) RestoreAV(b, 24, target - cur);
+		}
+		_MESSAGE("papyrus: boss %08X health restored to %.0f%%", (UInt32)b->formID, g_cfg.bossHealthPct);
+	}
+	SInt32 N_RecentAttacker(StaticFunctionTag *, SInt32 idx)
+	{
+		if(idx < 0 || idx > 3) return 0;
+		if(GetTickCount() - g_recentAtk[idx].tick > 20000) return 0;
+		return (SInt32)g_recentAtk[idx].id;
+	}
 	void N_OwnAnim(StaticFunctionTag *, SInt32 ms)
 	{
 		g_ownAnimUntil = GetTickCount() + (DWORD)(ms > 0 ? ms : 0);
@@ -2852,6 +2891,8 @@ namespace
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("LifeRecover", "NahIDWinNative", N_LifeRecover, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("LifeMethod", "NahIDWinNative", N_LifeMethod, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("SyncEssential", "NahIDWinNative", N_SyncEssential, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, Actor *>("BossRecover", "NahIDWinNative", N_BossRecover, registry));
+		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, SInt32, SInt32>("RecentAttacker", "NahIDWinNative", N_RecentAttacker, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("OwnAnim", "NahIDWinNative", N_OwnAnim, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, bool, SInt32>("BleedAccepted", "NahIDWinNative", N_BleedAccepted, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));

@@ -116,3 +116,9 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 ## v0.15.1
 
 - **Vidas extra pelo metodo do SkyTweak** (`[Lives] EssentialBleedout=1`): enquanto o jogador tem vidas fica marcado como essencial e o jogo faz o bleedout verdadeiro (sem dano que o mate). Passado o tempo de bleedout o Bridge acaba o combate, repoe a vida (`ResetHealthAndLimbs`) e a DLL baixa-a para `HealthPercent`. Sem vidas, a flag sai e a morte e normal. `0` volta ao metodo antigo.
+
+## v0.15.2
+
+- **Essencial como o SkyTweak**: a flag e posta pelo Papyrus (`GetActorBase().SetEssential`) assim que o save carrega e o jogador tem vidas (e retirada quando acabam). A DLL so avisa por evento (reenvia de 10 em 10 s). Bosses: marcados no 1o golpe; quando a vida acaba o jogo faz o bleedout, o script repoe a vida, tira a flag e volta ao combate.
+- **Inimigos voltam a lutar** quando o jogador revive (os ultimos 4 atacantes recebem `StartCombat`).
+- **Sem empurrao em gigantes/dragoes** (`[Knockback] VictimMassMax=3`): o ragdoll deles ficava preso no ar a andar para tras.

@@ -19,6 +19,8 @@ Event OnInit()
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
 	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
 	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
+	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
+	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
 	RegisterForSleep()
 	RegisterInputs()
 	NahIDWinNative.ScriptReady()
@@ -31,10 +33,12 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Combatant", "OnNahCombatant")
 	RegisterForModEvent("NahIDWin_Rage", "OnNahRage")
 	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
+	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
+	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.15.1: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.15.2: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -100,6 +104,41 @@ int livesUsed = 0
 bool sleptInBed = false
 
 ; A DLL avisa quando uma vida extra foi gasta (numArg = quantas ja gastas): ouro, aviso e brilho.
+; Marca/desmarca "essencial" (como o SkyTweak): o jogo so faz o bleedout verdadeiro se a flag ja la estiver.
+Function OnNahEssential(string eventName, string strArg, float numArg, Form sender)
+	Actor a = sender as Actor
+	if a
+		ActorBase ab = a.GetActorBase()
+		if ab
+			ab.SetEssential(numArg > 0.5)
+		endif
+	endif
+EndFunction
+
+; Boss gastou a vida extra: o jogo fez o bleedout; espera, repoe a vida, tira a flag e volta a lutar.
+Function OnNahBossLife(string eventName, string strArg, float numArg, Form sender)
+	Actor b = sender as Actor
+	if !b
+		return
+	endif
+	float secs = numArg
+	if secs < 3.0
+		secs = 3.0
+	endif
+	NahIDWinNative.Log("boss life: bleedout for " + secs + " s")
+	Utility.Wait(secs)
+	if b.IsDead()
+		return
+	endif
+	NahIDWinNative.BossRecover(b)
+	ActorBase ab = b.GetActorBase()
+	if ab
+		ab.SetEssential(false)
+	endif
+	b.StartCombat(Game.GetPlayer())
+	NahIDWinNative.Log("boss life: restored, back to combat")
+EndFunction
+
 Function OnNahLife(string eventName, string strArg, float numArg, Form sender)
 	livesUsed = numArg as int
 	Actor pl = Game.GetPlayer()
@@ -129,6 +168,17 @@ Function OnNahLife(string eventName, string strArg, float numArg, Form sender)
 		pl.StopCombatAlarm()
 		pl.ResetHealthAndLimbs()
 		NahIDWinNative.LifeRecover()
+		int ri = 0
+		while ri < 4
+			int rid = NahIDWinNative.RecentAttacker(ri)
+			if rid != 0
+				Actor ra = Game.GetForm(rid) as Actor
+				if ra && !ra.IsDead()
+					ra.StartCombat(pl)
+				endif
+			endif
+			ri += 1
+		endwhile
 		NahIDWinNative.Log("extra life: health restored, standing up")
 	endif
 	Spell glow = Game.GetFormFromFile(0x00000841, "NahIDWin.esp") as Spell
