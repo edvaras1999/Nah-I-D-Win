@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 25
+	return 26
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 7
+	if count > 0 && tableRev == 8
 		return
 	endif
-	tableRev = 7
+	tableRev = 8
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -609,6 +609,14 @@ Function BuildTable()
 	AddSetting(14, 0, "Lives", "HealthPercent", "Vida ao voltar (%)", "Health on return (%)", "Percentagem da vida maxima com que voltas.", "Percent of max health you return with.", 10.0, 100.0, 5.0, 50.0)
 	AddSetting(14, 0, "Lives", "GoldLossPercent", "Ouro perdido por morte (%)", "Gold lost per death (%)", "Percentagem do ouro que perdes ao usar uma vida. Sem ouro, nao perdes nada.", "Percent of your gold lost when a life is used. No gold, nothing lost.", 0.0, 50.0, 1.0, 25.0)
 	AddSetting(14, 0, "Lives", "InvulnSeconds", "Invulnerabilidade apos voltar (s)", "Invulnerability after return (s)", "Segundos sem levar dano depois de usares uma vida.", "Seconds without damage after a life is used.", 0.0, 10.0, 0.5, 3.0)
+	AddSetting(14, 1, "Bosses", "Enabled", "Bosses com 2 vidas", "Bosses with 2 lives", "NPC unico de nivel alto: ao gastar a 1a vida cai em bleedout e volta com a vida cheia.", "High-level unique NPC: when the 1st life ends it goes into bleedout and returns with full health.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(14, 0, "Bosses", "MinLevel", "Bosses: nivel minimo", "Bosses: minimum level", "Nivel minimo de um NPC unico para ser tratado como boss.", "Minimum level for a unique NPC to count as a boss.", 1.0, 81.0, 1.0, 30.0)
+	AddSetting(14, 0, "Bosses", "PoiseMult", "Bosses: poise (x)", "Bosses: poise (x)", "Multiplicador do poise dos bosses.", "Poise multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(14, 0, "Bosses", "PostureMult", "Bosses: postura (x)", "Bosses: posture (x)", "Multiplicador da postura dos bosses.", "Posture multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(14, 0, "BigCreatures", "PoiseMult", "Gigantes/dragoes: poise (x)", "Giants/dragons: poise (x)", "Multiplicador do poise das criaturas grandes (massa alta).", "Poise multiplier for large creatures (high mass).", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(14, 0, "BigCreatures", "PostureMult", "Gigantes/dragoes: postura (x)", "Giants/dragons: posture (x)", "Multiplicador da postura das criaturas grandes.", "Posture multiplier for large creatures.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(14, 1, "Execution", "Enabled", "Execucao garantida", "Guaranteed execution", "Acertar uma arma num alvo com a postura quebrada executa-o (feitico do Inpa). Bosses so depois da 1a vida.", "Hitting a posture-broken target with a weapon executes it (Inpa spell). Bosses only after their 1st life.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(14, 1, "Execution", "KillBigCreatures", "Executar gigantes/dragoes", "Execute giants/dragons", "Criaturas grandes morrem de vez (sem animacao de execucao).", "Large creatures die outright (no execution animation).", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(15, 1, "Supreme", "Enabled", "Supremo Rage ligado", "Supreme Rage enabled", "Aura de fogo: tudo o que a furia da, mais dano em area. Cooldown muito longo.", "Fire aura: everything rage gives, plus area damage. Very long cooldown.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(15, 0, "Supreme", "Key", "Tecla do Supremo Rage (codigo)", "Supreme Rage key (code)", "Codigo DirectInput. 35 = H. Prime outra vez para desligar.", "DirectInput code. 35 = H. Press again to turn off.", 1.0, 255.0, 1.0, 35.0)
 	AddSetting(15, 0, "Supreme", "DurationSeconds", "Duracao (s)", "Duration (s)", "", "", 3.0, 30.0, 1.0, 10.0)

@@ -53,3 +53,6 @@ Function SyncEssential() global native
 ; Boss: repoe a vida (HealthPercent do ini). Atacantes recentes do jogador (formID, 0 = nenhum): voltam a lutar ao reviver.
 Function BossRecover(Actor b) global native
 int Function RecentAttacker(int idx) global native
+
+; Evento de animacao opcional ao ativar o Supremo Rage ([Supreme] ActivationAnim; vazio = nenhum).
+string Function GetSupremeAnim() global native

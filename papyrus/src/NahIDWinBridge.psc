@@ -21,6 +21,7 @@ Event OnInit()
 	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
 	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
 	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
+	RegisterForModEvent("NahIDWin_Execute", "OnNahExecute")
 	RegisterForSleep()
 	RegisterInputs()
 	NahIDWinNative.ScriptReady()
@@ -35,10 +36,11 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Life", "OnNahLife")
 	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
 	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
+	RegisterForModEvent("NahIDWin_Execute", "OnNahExecute")
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.15.3: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.16.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -116,6 +118,41 @@ Function OnNahEssential(string eventName, string strArg, float numArg, Form send
 EndFunction
 
 ; Boss gastou a vida extra: o jogo fez o bleedout; espera, repoe a vida, tira a flag e volta a lutar.
+; Execucao garantida: o jogador acertou um alvo com a postura quebrada. Gigantes/dragoes ("big"): morrem. Os outros: feitico de execucao do Inpa.
+Function OnNahExecute(string eventName, string strArg, float numArg, Form sender)
+	Actor v = sender as Actor
+	Actor pl = Game.GetPlayer()
+	if !v || v.IsDead()
+		return
+	endif
+	if strArg == "big"
+		NahIDWinNative.Log("execution (big creature): kill " + v)
+		v.Kill(pl)
+		return
+	endif
+	GlobalVariable g = Game.GetFormFromFile(0x0011AADE, "NahIDWin.esp") as GlobalVariable
+	int mode = 2
+	if g
+		mode = g.GetValue() as int
+	endif
+	Spell sp = None
+	if mode == 2
+		sp = Game.GetFormFromFile(0x0078D3B4, "NahIDWin.esp") as Spell
+	elseif mode == 3
+		sp = Game.GetFormFromFile(0x007C9FB9, "NahIDWin.esp") as Spell
+	endif
+	if !sp
+		NahIDWinNative.Log("execution: Inpa killmove mode " + mode + " has no spell")
+		return
+	endif
+	Utility.Wait(0.35)
+	if v.IsDead() || v.IsInKillMove()
+		return
+	endif
+	NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ") on " + v)
+	sp.Cast(v, pl)
+EndFunction
+
 Function OnNahBossLife(string eventName, string strArg, float numArg, Form sender)
 	Actor b = sender as Actor
 	if !b
@@ -166,7 +203,30 @@ Function OnNahLife(string eventName, string strArg, float numArg, Form sender)
 		NahIDWinNative.Log("extra life: bleedout (game) for " + secs + " s")
 		; Igual ao SkyTweak: acaba o alarme de combate logo no inicio do bleedout, espera, repoe a vida.
 		pl.StopCombatAlarm()
-		Utility.Wait(secs)
+		Utility.Wait(0.7)
+		bool engineBO = pl.IsBleedingOut()
+		NahIDWinNative.Log("extra life: engine bleedout=" + engineBO)
+		if !engineBO
+			; rede de seguranca: o jogo nao fez o bleedout (marca essencial ignorada) -> animacao nossa, com invulnerabilidade da DLL
+			Game.DisablePlayerControls(true, true, false, false, false, true, true, false, 0)
+			int pid = pl.GetFormID()
+			int tries = 0
+			bool ok = false
+			while tries < 6 && !ok
+				NahIDWinNative.OwnAnim(600)
+				Debug.SendAnimationEvent(pl, "BleedoutStart")
+				Utility.Wait(0.25)
+				ok = NahIDWinNative.BleedAccepted(pid)
+				tries += 1
+			endwhile
+			NahIDWinNative.Log("extra life: fallback animation accepted=" + ok + " after " + tries + " tries")
+		endif
+		Utility.Wait(secs - 0.7)
+		if !engineBO
+			NahIDWinNative.OwnAnim(1500)
+			Debug.SendAnimationEvent(pl, "BleedoutStop")
+			Game.EnablePlayerControls(true, true, true, true, true, true, true, true, 0)
+		endif
 		pl.ResetHealthAndLimbs()
 		NahIDWinNative.LifeRecover()
 		NahIDWinNative.Log("extra life: health restored, standing up")
@@ -220,6 +280,10 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	if mode == 2 || mode == 3
 		symbol = Game.GetFormFromFile(0x00000843, "NahIDWin.esp") as Spell
 	endif
+	Spell fire = None
+	if strArg == "supreme"
+		fire = Game.GetFormFromFile(0x00000845, "NahIDWin.esp") as Spell
+	endif
 	string gs = "MISSING"
 	string ss = "MISSING"
 	if glow
@@ -236,6 +300,15 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 		if symbol
 			symbol.Cast(a, a)
 		endif
+		if fire
+			fire.Cast(a, a)
+		endif
+		if strArg == "supreme" && a == Game.GetPlayer()
+			string an = NahIDWinNative.GetSupremeAnim()
+			if an != ""
+				Debug.SendAnimationEvent(a, an)
+			endif
+		endif
 		Utility.Wait(numArg)
 	endif
 	if glow
@@ -243,6 +316,9 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 	endif
 	if symbol
 		a.DispelSpell(symbol)
+	endif
+	if fire
+		a.DispelSpell(fire)
 	endif
 EndFunction
 

@@ -129,3 +129,12 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **Sem forcar combate**: removido o `StartCombat` aos atacantes. Ordem igual ao SkyTweak: `StopCombatAlarm` no inicio do bleedout, espera, `ResetHealthAndLimbs`.
 - **Vida depois de reviver**: o ajuste para `HealthPercent` era anulado pela invulnerabilidade (ficava a 100%); corrigido.
 - A marca essencial tambem e verificada a cada dano ao jogador, alem do relogio do HUD.
+
+## v0.16.0
+
+- **Execucao garantida** (`[Execution]`): um golpe de arma do jogador num alvo com a postura quebrada pede ao Bridge o feitico de execucao do Inpa (modo lido do global `zzzSekiro_killmove`), sem depender do `OnHit` dele. Gigantes/dragoes (massa alta): morrem (`KillBigCreatures`).
+- **Bosses** (`[Bosses]`): postura e poise x1.5; na 1a fase a postura quebrada so da stagger pesado; so sao executaveis depois de gastarem a 1a vida. **Criaturas grandes** (`[BigCreatures]`): poise e postura x1.5.
+- **Vida extra do jogador**: a DLL escreve tambem a flag essencial diretamente (alem do Papyrus) e regista no log o estado dela; se o jogo nao fizer o bleedout (`IsBleedingOut` falso) o script faz a animacao como rede de seguranca. Sem forcar a animacao quando o jogo a faz.
+- **Fogo do Supremo Rage**: feitico `NahIDWin_SupFire` (0x845), so no pacote privado (efeitos do jogo base). `[Supreme] ActivationAnim` = evento de animacao opcional (experimental).
+- **HUD**: a barra de postura pulsa com contorno vermelho a partir de 80% e pisca inteira ao quebrar.
+- **Menu**: opcoes de bosses, criaturas grandes e execucao no bloco das vidas extra.

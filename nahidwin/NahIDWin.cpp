@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.15.3 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.16.0 (execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -251,6 +251,9 @@ namespace
 		int		livesEnabled, livesLevel2, livesLevel3;
 		float	livesHealthPct, livesGoldPct, livesInvuln;
 		// bosses (2 vidas): unico + nivel minimo
+		int		execEnabled, execBigKill;			// execucao garantida (evento para o Papyrus); gigantes/dragoes: matar
+		float	bossPoiseMult, bossPostureMult, bigPoiseMult, bigPostureMult;
+		char	supAnim[48];						// evento de animacao ao ativar o Supremo (vazio = nenhum)
 		int		livesEssential;	// 1 = metodo do SkyTweak: jogador essencial enquanto ha vidas (bleedout verdadeiro do jogo)
 		int		bossEnabled, bossMinLevel;
 		float	bossHealthPct, bossInvuln;
@@ -465,6 +468,13 @@ namespace
 		c.livesGoldPct	= IniF("Lives", "GoldLossPercent", 25.0f);
 		c.livesInvuln	= IniF("Lives", "InvulnSeconds", 3.0f);
 		c.livesEssential = IniI("Lives", "EssentialBleedout", 1);
+		c.execEnabled	= IniI("Execution", "Enabled", 1);
+		c.execBigKill	= IniI("Execution", "KillBigCreatures", 1);
+		c.bossPoiseMult	= IniF("Bosses", "PoiseMult", 1.5f);
+		c.bossPostureMult = IniF("Bosses", "PostureMult", 1.5f);
+		c.bigPoiseMult	= IniF("BigCreatures", "PoiseMult", 1.5f);
+		c.bigPostureMult = IniF("BigCreatures", "PostureMult", 1.5f);
+		GetPrivateProfileStringA("Supreme", "ActivationAnim", "", c.supAnim, sizeof(c.supAnim), g_iniPath);
 		c.bossEnabled	= IniI("Bosses", "Enabled", 1);
 		c.bossMinLevel	= IniI("Bosses", "MinLevel", 30);
 		c.bossHealthPct	= IniF("Bosses", "HealthPercent", 100.0f);
@@ -601,6 +611,7 @@ namespace
 		DWORD	exhaustReadyAt;	// proxima exaustao permitida a partir daqui
 		DWORD	invulnUntil;	// sem dano de vida ate aqui (vida extra / bleedout de boss)
 		int		bossUsed;		// boss: a vida extra ja foi gasta
+		DWORD	lastExec;		// ultima execucao pedida
 	};
 	typedef std::map<UInt32, PoiseState> StateMap;
 
@@ -680,7 +691,7 @@ namespace
 			}
 			PoiseState s;
 			s.cur = maxPoise; s.max = maxPoise; s.lastHit = 0; s.lastTick = now; s.immuneUntil = 0;
-			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0; s.rageUntil = 0; s.rageReadyAt = 0; s.exhaustReadyAt = 0; s.invulnUntil = 0; s.bossUsed = 0;
+			s.pCur = 0.0f; s.pMax = maxPosture; s.pLastHit = 0; s.pTick = now; s.bleedUntil = 0; s.bleedImmuneUntil = 0; s.lightUntil = 0; s.rageUntil = 0; s.rageReadyAt = 0; s.exhaustReadyAt = 0; s.invulnUntil = 0; s.bossUsed = 0; s.lastExec = 0;
 			it = g_states.insert(std::make_pair(id, s)).first;
 		}
 		else
@@ -704,8 +715,23 @@ namespace
 		float	hpMax;
 		bool	alive;
 		bool	isPlayer;
+		bool	boss;
 	};
 
+	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
+	bool IsBossActor(Actor * a)
+	{
+		__try
+		{
+			if(!g_cfg.bossEnabled || !a || a->formID == 0x14) return false;
+			if(a->flags1 & Actor::kFlags_IsPlayerTeammate) return false;
+			TESForm * b = a->baseForm;
+			if(!b || b->formType != kFormType_NPC) return false;
+			if(!(((TESNPC *)b)->actorData.flags & 0x20)) return false;	// Unique
+			return (int)CALL_MEMBER_FN(a, GetLevel)() >= g_cfg.bossMinLevel;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+	}
 	// Sem objetos com destrutor: pode usar __try.
 	bool ReadActorStats(Actor * a, ActorStats * out)
 	{
@@ -729,6 +755,7 @@ namespace
 			if(!(out->hpMax > 0.0f && out->hpMax < 100000.0f)) out->hpMax = 100.0f;
 			if(!(out->hp >= 0.0f && out->hp <= out->hpMax * 4.0f)) out->hp = out->hpMax;
 			out->alive = (Engine::LifeState(a) == 0);
+			out->boss = IsBossActor(a);
 			return true;
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER)
@@ -742,6 +769,8 @@ namespace
 		float m = s.mass * g_cfg.massMult + s.armor * g_cfg.armorFrac;
 		if(m < g_cfg.minPoise) m = g_cfg.minPoise;
 		m *= s.isPlayer ? g_cfg.poiseMaxScalePlayer : g_cfg.poiseMaxScaleNpc;
+		if(!s.isPlayer && s.boss) m *= g_cfg.bossPoiseMult;
+		if(!s.isPlayer && s.mass >= g_cfg.kbGiantMass) m *= g_cfg.bigPoiseMult;
 		return (m < 5.0f) ? 5.0f : m;
 	}
 
@@ -751,6 +780,8 @@ namespace
 		float m = g_cfg.postureBase + s.hpMax * g_cfg.postureHealthFrac + s.armor * g_cfg.postureArmorFrac;
 		m *= s.isPlayer ? g_cfg.postureScalePlayer : g_cfg.postureScaleNpc;
 		m *= (g_cfg.postureDifficulty > 0.05f) ? g_cfg.postureDifficulty : 0.05f;	// dificuldade maior = postura maior
+		if(!s.isPlayer && s.boss) m *= g_cfg.bossPostureMult;
+		if(!s.isPlayer && s.mass >= g_cfg.kbGiantMass) m *= g_cfg.bigPostureMult;
 		return (m < 10.0f) ? 10.0f : m;
 	}
 
@@ -1395,10 +1426,23 @@ namespace
 	void SendLifeEvent(TESObjectREFR * ref, int used)
 	{
 		if(!ref) return;
+		EnsureNotifyHook(ref);
 		EventDispatcher<PoiseModEvent> * d = NULL;
 		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
 		if(!d) return;
 		PoiseModEvent evn("NahIDWin_Life", "", (float)used, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
+	}
+
+	// Execucao: o Papyrus lanca o feitico de execucao do Inpa (ou mata, em gigantes/dragoes). Nao depende do OnHit do Inpa.
+	void SendExecuteEvent(TESObjectREFR * ref, const char * tag)
+	{
+		if(!ref) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		_MESSAGE("EXECUTION requested: victim=%08X %s", (UInt32)ref->formID, tag);
+		PoiseModEvent evn("NahIDWin_Execute", tag, 0.0f, (TESForm *)ref);
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
@@ -1705,6 +1749,7 @@ namespace
 			if(ReadAV((Actor *)h.victimRef, 26, &sc, &sm) && sc <= 1.0f) exhaustCandidate = true;
 		}
 
+		bool doExec = false, bossStagger = false;
 		bool applied = false, poiseBroke = false, postureBroke = false, poiseWasImmune = false, bleeding = false, raging = false, rageStarted = false;
 		float before = 0.0f, after = 0.0f, pBefore = 0.0f, pAfter = 0.0f;
 		int kind = 0;
@@ -1718,6 +1763,14 @@ namespace
 			bleeding = (now < st.bleedUntil) || (now < st.bleedImmuneUntil);
 			poiseWasImmune = (now < st.immuneUntil);
 			raging = (now < st.rageUntil);
+			const bool bossP1 = (!h.victim.isPlayer && h.victim.boss && st.bossUsed == 0);
+			// execucao: golpe de arma do jogador num alvo com a postura quebrada (o boss so e executavel depois de gastar a 1a vida)
+			if(g_cfg.execEnabled && h.attackerId == 0x14 && h.sourceKind == 1 && !h.victim.isPlayer && h.victim.alive && !bossP1 &&
+				now < st.bleedUntil && now >= st.invulnUntil && (st.lastExec == 0 || now - st.lastExec > 4000))
+			{
+				st.lastExec = now;
+				doExec = true;
+			}
 
 			// furia automatica dos NPCs
 			if(!h.victim.isPlayer && g_cfg.rageEnabled && g_cfg.rageNpc && !bleeding && !poiseWasImmune && !raging && now >= st.rageReadyAt)
@@ -1757,7 +1810,13 @@ namespace
 				if(g_cfg.postureEnabled)
 				{
 					st.pCur += postureDmg;
-					if(st.pCur >= st.pMax)
+					if(st.pCur >= st.pMax && bossP1)
+					{
+						// boss na 1a fase: a postura quebrada so da stagger pesado (nao ha bleedout nem execucao)
+						bossStagger = true;
+						st.pCur = st.pMax * g_cfg.postureResetFraction;
+					}
+					else if(st.pCur >= st.pMax)
 					{
 						postureBroke = true;
 						st.pCur = st.pMax * g_cfg.postureResetFraction;
@@ -1769,7 +1828,7 @@ namespace
 
 				// que stagger? (a postura quebrada vence tudo; depois o poise quebrado; depois leve/medio)
 				if(postureBroke) kind = 4;
-				else if(poiseBroke) kind = 3;
+				else if(poiseBroke || bossStagger) kind = 3;
 				else if(!blocked && g_cfg.lightEnabled && (h.victim.isPlayer ? g_cfg.lightPlayer : g_cfg.lightNpc))
 				{
 					if(heavyHit && g_cfg.mediumOnPower) kind = 2;
@@ -1787,6 +1846,8 @@ namespace
 			pAfter = st.pCur;
 		}
 		Unlock();
+
+		if(doExec) SendExecuteEvent(h.victimRef, (g_cfg.execBigKill && h.victim.mass >= g_cfg.kbGiantMass) ? "big" : "");
 
 		// empurrao: so no stagger pesado e so em condicoes especificas
 		if(kind == 3 && g_cfg.kbEnabled && g_cfg.kbForce > 0.0f && (!h.victim.isPlayer || g_cfg.kbPlayer))
@@ -1952,6 +2013,28 @@ namespace
 		PoiseModEvent evn("NahIDWin_Essential", "", on ? 1.0f : 0.0f, (TESForm *)ref);
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
+	// Escreve a flag essencial tambem diretamente (o Papyrus tem latencia; assim a flag esta sempre certa no momento do golpe).
+	void SetPlayerEssentialDirect(bool on)
+	{
+		__try
+		{
+			Actor * pl = (Actor *)Engine::Player();
+			if(!pl || !pl->baseForm || pl->baseForm->formType != kFormType_NPC) return;
+			UInt32 & fl = ((TESNPC *)pl->baseForm)->actorData.flags;
+			if(on) fl |= 0x02; else fl &= ~0x02u;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {}
+	}
+	int PlayerEssentialFlag()
+	{
+		__try
+		{
+			Actor * pl = (Actor *)Engine::Player();
+			if(!pl || !pl->baseForm || pl->baseForm->formType != kFormType_NPC) return -1;
+			return (((TESNPC *)pl->baseForm)->actorData.flags & 0x02) ? 1 : 0;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return -1; }
+	}
 	// Essencial so enquanto ha vidas (e durante o bleedout da vida gasta). Reenvia de 10 em 10 s (o evento pode perder-se logo apos o load).
 	void SyncEssential()
 	{
@@ -1960,6 +2043,7 @@ namespace
 		if(!pl) return;
 		const DWORD now = GetTickCount();
 		const LONG want = (LivesAvailable(pl) > 0 || (LONG)(now - g_invulnUntil) < 0) ? 1 : 0;
+		SetPlayerEssentialDirect(want != 0);
 		if(want != g_essSent || now - g_essLast > 10000)
 		{
 			if(want != g_essSent) _MESSAGE("essential mark (player): %d", (int)want);
@@ -1979,20 +2063,6 @@ namespace
 		}
 		if(slot < 0) slot = oldest;
 		g_recentAtk[slot].id = id; g_recentAtk[slot].tick = now;
-	}
-	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
-	bool IsBossActor(Actor * a)
-	{
-		__try
-		{
-			if(!g_cfg.bossEnabled || !a || a->formID == 0x14) return false;
-			if(a->flags1 & Actor::kFlags_IsPlayerTeammate) return false;
-			TESForm * b = a->baseForm;
-			if(!b || b->formType != kFormType_NPC) return false;
-			if(!(((TESNPC *)b)->actorData.flags & 0x20)) return false;	// Unique
-			return (int)CALL_MEMBER_FN(a, GetLevel)() >= g_cfg.bossMinLevel;
-		}
-		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
 	}
 	volatile LONG g_bossPending = 0;	// formID do boss cuja vida extra acabou de ser gasta
 	float AdjustHealthDamage(Actor * self, Actor * attacker, float amount)
@@ -2110,6 +2180,7 @@ namespace
 						if(g_cfg.livesEssential)
 						{
 							// o dano passa inteiro: o jogo, vendo o jogador essencial (marcado desde o load), faz o bleedout verdadeiro
+							SetPlayerEssentialDirect(true);
 							const float bs = g_cfg.bleedSeconds < 5.0f ? 5.0f : g_cfg.bleedSeconds;
 							g_invulnUntil = now + (DWORD)((bs + 2.0f + g_cfg.livesInvuln) * 1000.0f);
 							// o jogador fica "em bleedout" tambem para a nossa logica: sem stagger leve nem golpes a contar (isso cortava o bleedout)
@@ -2193,7 +2264,7 @@ namespace
 		InterlockedExchange(&g_lifePending, 0);
 		if(g_cfg.livesEssential)
 		{
-			_MESSAGE("EXTRA LIFE used (#%d): the game does the real bleedout (essential), the script restores the health afterwards", (int)g_livesUsed);
+			_MESSAGE("EXTRA LIFE used (#%d): the game does the real bleedout (essential flag=%d), the script restores the health afterwards", (int)g_livesUsed, PlayerEssentialFlag());
 			SendLifeEvent((TESObjectREFR *)self, (int)g_livesUsed);
 			return;
 		}
@@ -2871,6 +2942,10 @@ namespace
 		if(GetTickCount() - g_recentAtk[idx].tick > 20000) return 0;
 		return (SInt32)g_recentAtk[idx].id;
 	}
+	BSFixedString N_GetSupremeAnim(StaticFunctionTag *)
+	{
+		return BSFixedString(g_cfg.supAnim);
+	}
 	void N_OwnAnim(StaticFunctionTag *, SInt32 ms)
 	{
 		g_ownAnimUntil = GetTickCount() + (DWORD)(ms > 0 ? ms : 0);
@@ -2908,6 +2983,7 @@ namespace
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("SyncEssential", "NahIDWinNative", N_SyncEssential, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, Actor *>("BossRecover", "NahIDWinNative", N_BossRecover, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, SInt32, SInt32>("RecentAttacker", "NahIDWinNative", N_RecentAttacker, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, BSFixedString>("GetSupremeAnim", "NahIDWinNative", N_GetSupremeAnim, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("OwnAnim", "NahIDWinNative", N_OwnAnim, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, bool, SInt32>("BleedAccepted", "NahIDWinNative", N_BleedAccepted, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));
