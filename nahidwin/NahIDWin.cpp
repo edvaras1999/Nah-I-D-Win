@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.15.0 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.15.1 (bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -250,6 +250,7 @@ namespace
 		int		livesEnabled, livesLevel2, livesLevel3;
 		float	livesHealthPct, livesGoldPct, livesInvuln;
 		// bosses (2 vidas): unico + nivel minimo
+		int		livesEssential;	// 1 = metodo do SkyTweak: jogador essencial enquanto ha vidas (bleedout verdadeiro do jogo)
 		int		bossEnabled, bossMinLevel;
 		float	bossHealthPct, bossInvuln;
 		// Supremo Rage (aura)
@@ -461,6 +462,7 @@ namespace
 		c.livesHealthPct = IniF("Lives", "HealthPercent", 50.0f);
 		c.livesGoldPct	= IniF("Lives", "GoldLossPercent", 25.0f);
 		c.livesInvuln	= IniF("Lives", "InvulnSeconds", 3.0f);
+		c.livesEssential = IniI("Lives", "EssentialBleedout", 1);
 		c.bossEnabled	= IniI("Bosses", "Enabled", 1);
 		c.bossMinLevel	= IniI("Bosses", "MinLevel", 30);
 		c.bossHealthPct	= IniF("Bosses", "HealthPercent", 100.0f);
@@ -1931,6 +1933,25 @@ namespace
 		const int u = LivesUnlocked(a) - (int)g_livesUsed;
 		return u > 0 ? u : 0;
 	}
+	// Marca/desmarca o jogador como essencial (flag 0x02 do ator-base), como o SkyTweak: assim o jogo faz o bleedout verdadeiro.
+	void SetPlayerEssential(bool on)
+	{
+		__try
+		{
+			Actor * pl = (Actor *)Engine::Player();
+			if(!pl || !pl->baseForm || pl->baseForm->formType != kFormType_NPC) return;
+			UInt32 & fl = ((TESNPC *)pl->baseForm)->actorData.flags;
+			if(on) fl |= 0x02; else fl &= ~0x02u;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {}
+	}
+	// Essencial so enquanto ha vidas (e nao enquanto dura o bleedout da vida gasta).
+	void SyncEssential()
+	{
+		if(!g_cfg.enabled || !g_cfg.livesEnabled || !g_cfg.livesEssential) return;
+		const bool want = LivesAvailable((Actor *)Engine::Player()) > 0 || (LONG)(GetTickCount() - g_invulnUntil) < 0;
+		SetPlayerEssential(want);
+	}
 	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
 	bool IsBossActor(Actor * a)
 	{
@@ -2051,12 +2072,22 @@ namespace
 					float curHp = 0.0f, maxHp = 0.0f;
 					if(ReadAV(self, 24, &curHp, &maxHp) && curHp + result <= 0.5f && LivesAvailable(self) > 0)
 					{
-						result = -(curHp - 1.0f);
-						if(result > 0.0f) result = 0.0f;
 						InterlockedIncrement(&g_livesUsed);
-						g_invulnUntil = now + (DWORD)(g_cfg.livesInvuln * 1000.0f);
+						if(g_cfg.livesEssential)
+						{
+							// o dano passa inteiro: o jogo, vendo o jogador essencial, faz o bleedout verdadeiro
+							SetPlayerEssential(true);
+							g_invulnUntil = now + (DWORD)((g_cfg.bleedSeconds + 3.0f + g_cfg.livesInvuln) * 1000.0f);
+							why = "extra life (essential bleedout)";
+						}
+						else
+						{
+							result = -(curHp - 1.0f);
+							if(result > 0.0f) result = 0.0f;
+							g_invulnUntil = now + (DWORD)(g_cfg.livesInvuln * 1000.0f);
+							why = "extra life";
+						}
 						InterlockedExchange(&g_lifePending, 1);
-						why = "extra life";
 					}
 				}
 			}
@@ -2114,6 +2145,12 @@ namespace
 	void ReviveExtraLife(Actor * self)
 	{
 		InterlockedExchange(&g_lifePending, 0);
+		if(g_cfg.livesEssential)
+		{
+			_MESSAGE("EXTRA LIFE used (#%d): the game does the real bleedout (essential), the script restores the health afterwards", (int)g_livesUsed);
+			SendLifeEvent((TESObjectREFR *)self, (int)g_livesUsed);
+			return;
+		}
 		float cur = 0.0f, mx = 0.0f;
 		if(ReadAV(self, 24, &cur, &mx))
 		{
@@ -2628,6 +2665,7 @@ namespace
 		if(n > 2) n = 2;
 		g_livesUsed = n;
 		_MESSAGE("papyrus: extra lives used set to %d", (int)n);
+		SyncEssential();
 	}
 	void N_Ack(StaticFunctionTag *, SInt32 packed)
 	{
@@ -2755,6 +2793,30 @@ namespace
 		return g_cfg.language;
 	}
 
+	// Depois do ResetHealthAndLimbs (vida cheia): baixa a vida para HealthPercent.
+	void N_LifeRecover(StaticFunctionTag *)
+	{
+		Actor * pl = (Actor *)Engine::Player();
+		float cur = 0.0f, mx = 0.0f;
+		if(pl && ReadAV(pl, 24, &cur, &mx))
+		{
+			float target = mx * g_cfg.livesHealthPct / 100.0f;
+			if(target < 1.0f) target = 1.0f;
+			if(target < cur) RestoreAV(pl, 24, target - cur);
+			else if(target > cur) RestoreAV(pl, 24, target - cur);
+		}
+		g_invulnUntil = GetTickCount() + (DWORD)(g_cfg.livesInvuln * 1000.0f);
+		SyncEssential();
+		_MESSAGE("papyrus: extra life recovery - health set to %.0f%%, invulnerable %.1f s, essential=%d", g_cfg.livesHealthPct, g_cfg.livesInvuln, LivesAvailable(pl) > 0 ? 1 : 0);
+	}
+	SInt32 N_LifeMethod(StaticFunctionTag *)
+	{
+		return g_cfg.livesEssential ? 1 : 0;
+	}
+	void N_SyncEssential(StaticFunctionTag *)
+	{
+		SyncEssential();
+	}
 	void N_OwnAnim(StaticFunctionTag *, SInt32 ms)
 	{
 		g_ownAnimUntil = GetTickCount() + (DWORD)(ms > 0 ? ms : 0);
@@ -2787,6 +2849,9 @@ namespace
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("BleedDone", "NahIDWinNative", N_BleedDone, registry));
 		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("ScriptReady", "NahIDWinNative", N_ScriptReady, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("SetLivesUsed", "NahIDWinNative", N_SetLivesUsed, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("LifeRecover", "NahIDWinNative", N_LifeRecover, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, SInt32>("LifeMethod", "NahIDWinNative", N_LifeMethod, registry));
+		registry->RegisterFunction(new NativeFunction0 <StaticFunctionTag, void>("SyncEssential", "NahIDWinNative", N_SyncEssential, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("OwnAnim", "NahIDWinNative", N_OwnAnim, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, bool, SInt32>("BleedAccepted", "NahIDWinNative", N_BleedAccepted, registry));
 		registry->RegisterFunction(new NativeFunction1 <StaticFunctionTag, void, SInt32>("Ack", "NahIDWinNative", N_Ack, registry));
@@ -2884,6 +2949,7 @@ namespace
 		PutBool(o, "ready", ready);
 		if(!ready) return;
 		TickSupreme(now);
+		SyncEssential();
 
 		BarInfo pi = { 1.0f, 0, 1.0f, false, 0.0f };
 		bool pOn = false;

@@ -112,3 +112,7 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **HUD**: vidas extra em circulos verdes (jogador) e vermelhos (bosses); estrela laranja do Supremo Rage. Postura estilo Sekiro agora enche do centro para as extremidades e pisca vermelho quando cheia.
 - **TrueHUD**: a barra especial passa a ser o POISE (a descer; a zero: stagger pesado). `Bar=0` por omissao; a postura fica nas barras proprias.
 - **Menu/ini**: gasto de estamina por golpe do jogador e do NPC, ligado, 10 e 10 por omissao.
+
+## v0.15.1
+
+- **Vidas extra pelo metodo do SkyTweak** (`[Lives] EssentialBleedout=1`): enquanto o jogador tem vidas fica marcado como essencial e o jogo faz o bleedout verdadeiro (sem dano que o mate). Passado o tempo de bleedout o Bridge acaba o combate, repoe a vida (`ResetHealthAndLimbs`) e a DLL baixa-a para `HealthPercent`. Sem vidas, a flag sai e a morte e normal. `0` volta ao metodo antigo.

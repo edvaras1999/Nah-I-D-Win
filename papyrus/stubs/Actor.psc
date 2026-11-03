@@ -15,3 +15,5 @@ bool Function RemoveSpell(Spell akSpell) native
 bool Function DispelSpell(Spell akSpell) native
 ObjectReference Function GetFurnitureReference() native
 int Function GetSleepState() native
+Function ResetHealthAndLimbs() native
+Function StopCombatAlarm() native

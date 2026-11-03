@@ -44,3 +44,8 @@ Function OwnAnim(int ms) global native
 
 ; O grafo de animacao aceitou o ultimo BleedoutStart deste ator (formID)?
 bool Function BleedAccepted(int formId) global native
+
+; Vida extra pelo metodo essencial (SkyTweak): 1 = o jogo faz o bleedout; LifeRecover baixa a vida cheia para HealthPercent.
+int Function LifeMethod() global native
+Function LifeRecover() global native
+Function SyncEssential() global native
