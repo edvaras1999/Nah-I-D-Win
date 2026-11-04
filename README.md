@@ -147,3 +147,13 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Ataque perigoso (`[Perilous]`): aviso com simbolo, ignora o bloqueio, parry da postura extra ao atacante.
 - Barra do alvo: lock-on do Soft Target LE (precisa do SoftTargetLE.dll novo), lock-on do jogo, crosshair, ou inimigo a menos de `[HUD] TargetRadius` px do centro; fica `TargetStickyMs` ms depois.
 - Menu: removidas 8 linhas (ficam no .ini) por causa do limite de 128 entradas do Papyrus.
+
+## v0.17.1
+- Barra do alvo por raio: so inimigos hostis (que trocaram golpes contigo nos ultimos 60 s), em combate, a menos de `[HUD] TargetMaxDistance` (2000).
+- Execucao: nao arranca se ja ha uma execucao/kill move em curso; registos novos (`EXEC-WATCH`, `PLAYER LETHAL HIT`, `execution watch`) para descobrir o que mata o jogador.
+
+## v0.18.0
+- Exaustao do jogador: ja nao bloqueia os controlos de combate (o jogo embainhava a arma); so deixa de regenerar estamina.
+- Furia automatica dos NPCs: so bosses e gigantes/dragoes.
+- `FLEE-WATCH` no log: regista quando um inimigo hostil deixa de combater estando vivo.
+- Supremo Rage: lanca a marca `NahIDWin_SupAnim` (3 s, so no pacote privado) e envia o evento `[Supreme] ActivationAnim` (por defeito `attackPowerStartForward`). O Dynamic Animation Replacer usa a marca como condicao (pacote privado).
