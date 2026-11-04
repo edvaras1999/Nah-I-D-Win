@@ -45,7 +45,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	executing = false
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.17.1: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.18.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -359,6 +359,13 @@ Function OnNahRage(string eventName, string strArg, float numArg, Form sender)
 		if strArg == "supreme" && a == Game.GetPlayer()
 			string an = NahIDWinNative.GetSupremeAnim()
 			if an != ""
+				; marca (3 s) que o Dynamic Animation Replacer usa como condicao da animacao do Supremo Rage
+				Spell mark = Game.GetFormFromFile(0x00000847, "NahIDWin.esp") as Spell
+				if mark
+					mark.Cast(a, a)
+					Utility.Wait(0.3)
+				endif
+				NahIDWinNative.Log("supreme rage: animation event " + an)
 				Debug.SendAnimationEvent(a, an)
 			endif
 		endif
@@ -425,7 +432,7 @@ Function DoExhaustPlayer()
 	float secs = NahIDWinNative.GetExhaustSeconds()
 	float savedRate = pl.GetActorValue("StaminaRateMult")
 	pl.SetActorValue("StaminaRateMult", 0.0)
-	Game.DisablePlayerControls(false, true, false, false, false, false, false, false, 0)
+	; sem bloquear os controlos de combate (isso fazia o jogo embainhar a arma): so deixa de regenerar estamina
 	NahIDWinNative.Log("exhaust player start " + secs)
 	if NahIDWinNative.GetLanguage() == 1
 		Debug.Notification("NAH-I-D-WIN: EXAUSTO!")
@@ -433,7 +440,6 @@ Function DoExhaustPlayer()
 		Debug.Notification("NAH-I-D-WIN: EXHAUSTED!")
 	endif
 	Utility.Wait(secs)
-	Game.EnablePlayerControls(false, true, false, false, false, false, false, false, 0)
 	float r = NahIDWinNative.GetRegenPercent()
 	if r > 0.0
 		pl.SetActorValue("StaminaRateMult", r)

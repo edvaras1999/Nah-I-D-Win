@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.17.1 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.18.0 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -480,7 +480,7 @@ namespace
 		c.bossPostureMult = IniF("Bosses", "PostureMult", 1.5f);
 		c.bigPoiseMult	= IniF("BigCreatures", "PoiseMult", 1.5f);
 		c.bigPostureMult = IniF("BigCreatures", "PostureMult", 1.5f);
-		GetPrivateProfileStringA("Supreme", "ActivationAnim", "", c.supAnim, sizeof(c.supAnim), g_iniPath);
+		GetPrivateProfileStringA("Supreme", "ActivationAnim", "attackPowerStartForward", c.supAnim, sizeof(c.supAnim), g_iniPath);
 		c.bossEnabled	= IniI("Bosses", "Enabled", 1);
 		c.bossLevelMargin	= IniI("Bosses", "LevelMargin", 7);
 		c.bigRageMult	= IniF("BigCreatures", "RageDurationMult", 1.5f);
@@ -652,6 +652,9 @@ namespace
 	DWORD g_perilTick = 0;
 	std::map<UInt32, DWORD> g_hostile;		// inimigos do jogador: id -> ultimo golpe trocado com o jogador
 	volatile DWORD	g_execTick = 0;			// ultima execucao pedida (vigia da vida do jogador)
+	struct FleeSlot { int combat; DWORD lastLog; };
+	std::map<UInt32, FleeSlot> g_flee;
+	DWORD g_fleeTick = 0;
 	volatile LONG	g_deflectOn = 0;		// parry numa magia: enquanto segurar o bloqueio, a magia e devolvida
 	volatile DWORD	g_deflectStart = 0;
 	volatile UInt32	g_parryAtkId = 0;		// anti-duplicacao: um ataque conta um parry so
@@ -1521,7 +1524,7 @@ namespace
 		g_parryReadyAt = 0;
 		g_parryHitDone = 0;
 		g_blockHeld = 0;
-		g_peril.clear(); g_hostile.clear(); g_deflectOn = 0; g_parryAtkId = 0; memset(g_magicAtk, 0, sizeof(g_magicAtk)); memset(g_dot, 0, sizeof(g_dot));
+		g_peril.clear(); g_hostile.clear(); g_flee.clear(); g_deflectOn = 0; g_parryAtkId = 0; memset(g_magicAtk, 0, sizeof(g_magicAtk)); memset(g_dot, 0, sizeof(g_dot));
 		g_playerBarValid = false;
 		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
@@ -1828,6 +1831,61 @@ namespace
 		}
 	}
 
+	// ---- vigia de fugas: regista quando um inimigo hostil deixa de estar em combate com vida (para descobrir porque fogem)
+	bool ReadFleeInfo(UInt32 id, int * inCombat, float * hp, float * hpMax, float * st, float * stMax, float * dist)
+	{
+		__try
+		{
+			Actor * a = ActorFromFormId(id);
+			PlayerCharacter * pc = Engine::Player();
+			if(!a || !pc || Engine::LifeState(a) != 0) return false;
+			*inCombat = a->IsInCombat() ? 1 : 0;
+			ReadAV(a, 24, hp, hpMax);
+			ReadAV(a, 26, st, stMax);
+			const float dx = a->pos.x - pc->pos.x, dy = a->pos.y - pc->pos.y;
+			*dist = sqrtf(dx * dx + dy * dy);
+			return true;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+	}
+	void TickFleeWatch(DWORD now)
+	{
+		if(!g_cfg.diag || now - g_fleeTick < 250) return;
+		g_fleeTick = now;
+		UInt32 ids[64]; DWORD hitAt[64]; int n = 0;
+		Lock();
+		for(std::map<UInt32, DWORD>::iterator it = g_hostile.begin(); it != g_hostile.end() && n < 64; ++it) if(now - it->second < 20000) { ids[n] = it->first; hitAt[n] = it->second; n++; }
+		Unlock();
+		for(int i = 0; i < n; i++)
+		{
+			int c = 0; float hp = 0, hm = 0, st = 0, sm = 0, d = 0;
+			if(!ReadFleeInfo(ids[i], &c, &hp, &hm, &st, &sm, &d)) continue;
+			bool log = false;
+			float poise = -1.0f, posture = -1.0f; int bleed = 0, rage = 0;
+			Lock();
+			{
+				FleeSlot & sl = g_flee[ids[i]];
+				if(sl.combat == 1 && c == 0 && now - sl.lastLog > 3000) { log = true; sl.lastLog = now; }
+				sl.combat = c;
+				if(log)
+				{
+					StateMap::iterator it = g_states.find(ids[i]);
+					if(it != g_states.end())
+					{
+						const PoiseState & ps = it->second;
+						poise = ps.max > 0.0f ? ps.cur / ps.max : -1.0f;
+						posture = ps.pMax > 0.0f ? ps.pCur / ps.pMax : -1.0f;
+						bleed = (now < ps.bleedUntil || now < ps.bleedImmuneUntil) ? 1 : 0;
+						rage = (now < ps.rageUntil) ? 1 : 0;
+					}
+				}
+				if(g_flee.size() > 300) g_flee.clear();
+			}
+			Unlock();
+			if(log) _MESSAGE("FLEE-WATCH: %08X left combat (alive) hp=%.0f/%.0f stamina=%.0f/%.0f poise=%.2f posture=%.2f bleedout=%d rage=%d dist=%.0f msSinceHitWithPlayer=%d", ids[i], hp, hm, st, sm, poise, posture, bleed, rage, d, (int)(now - hitAt[i]));
+		}
+	}
+
 	int ParryAttacker(const HitInfo & h, DWORD now)
 	{
 		if(!h.attackerIsActor || !h.attackerActor || h.attacker.isPlayer || !h.attacker.alive) return 0;
@@ -2023,7 +2081,7 @@ namespace
 			}
 
 			// furia automatica dos NPCs
-			if(!h.victim.isPlayer && g_cfg.rageEnabled && g_cfg.rageNpc && !bleeding && !poiseWasImmune && !raging && now >= st.rageReadyAt)
+			if(!h.victim.isPlayer && g_cfg.rageEnabled && g_cfg.rageNpc && (h.victim.boss || h.victim.mass >= g_cfg.kbGiantMass) && !bleeding && !poiseWasImmune && !raging && now >= st.rageReadyAt)
 			{
 				const float pf = (st.max > 0.0f) ? (st.cur / st.max) : 1.0f;
 				const float sf = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
@@ -3461,6 +3519,7 @@ namespace
 		if(!ready) return;
 		TickSupreme(now);
 		TickPerilous(now);
+		TickFleeWatch(now);
 		if(g_execTick && now - g_execTick < 15000)
 		{
 			// vigia da vida do jogador depois de uma execucao (para descobrir o que o mata)
