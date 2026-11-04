@@ -22,6 +22,8 @@ Event OnInit()
 	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
 	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
 	RegisterForModEvent("NahIDWin_Execute", "OnNahExecute")
+	RegisterForModEvent("NahIDWin_Reflect", "OnNahReflect")
+	RegisterForModEvent("NahIDWin_Perilous", "OnNahPerilous")
 	RegisterForSleep()
 	RegisterInputs()
 	NahIDWinNative.ScriptReady()
@@ -37,10 +39,12 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Essential", "OnNahEssential")
 	RegisterForModEvent("NahIDWin_BossLife", "OnNahBossLife")
 	RegisterForModEvent("NahIDWin_Execute", "OnNahExecute")
+	RegisterForModEvent("NahIDWin_Reflect", "OnNahReflect")
+	RegisterForModEvent("NahIDWin_Perilous", "OnNahPerilous")
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.16.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.17.0: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -151,6 +155,38 @@ Function OnNahExecute(string eventName, string strArg, float numArg, Form sender
 	endif
 	NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ") on " + v)
 	sp.Cast(v, pl)
+EndFunction
+
+; Deflect: o feitico que acertou o jogador e relancado no conjurador.
+Function OnNahReflect(string eventName, string strArg, float numArg, Form sender)
+	Actor c = sender as Actor
+	if !c || c.IsDead()
+		return
+	endif
+	Spell sp = Game.GetForm(strArg as int) as Spell
+	if sp
+		sp.Cast(Game.GetPlayer(), c)
+	endif
+EndFunction
+
+; Ataque perigoso: aviso visual (simbolo + brilho do Inpa) e som no atacante.
+Function OnNahPerilous(string eventName, string strArg, float numArg, Form sender)
+	Actor a = sender as Actor
+	if !a || a.IsDead()
+		return
+	endif
+	Spell symbol = Game.GetFormFromFile(0x00000843, "NahIDWin.esp") as Spell
+	Spell glow = Game.GetFormFromFile(0x00000841, "NahIDWin.esp") as Spell
+	if symbol
+		symbol.Cast(a, a)
+	endif
+	if glow
+		glow.Cast(a, a)
+	endif
+	Sound mk = Game.GetFormFromFile(0x00006E76, "NahIDWin.esp") as Sound
+	if mk
+		mk.Play(a)
+	endif
 EndFunction
 
 Function OnNahBossLife(string eventName, string strArg, float numArg, Form sender)

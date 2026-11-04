@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.16.0 (execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.17.0 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -255,7 +255,12 @@ namespace
 		float	bossPoiseMult, bossPostureMult, bigPoiseMult, bigPostureMult;
 		char	supAnim[48];						// evento de animacao ao ativar o Supremo (vazio = nenhum)
 		int		livesEssential;	// 1 = metodo do SkyTweak: jogador essencial enquanto ha vidas (bleedout verdadeiro do jogo)
-		int		bossEnabled, bossMinLevel;
+		int		bossEnabled, bossLevelMargin;
+		float	bigRageMult;
+		int		magicDotMs, deflectEnabled;
+		int		perilEnabled, perilChance, perilWindowMs;
+		float	perilCooldown, perilDmgMult, perilParryPosture, perilRange;
+		float	magicDotMult;
 		float	bossHealthPct, bossInvuln;
 		// Supremo Rage (aura)
 		int		supEnabled, supKey;
@@ -295,6 +300,7 @@ namespace
 		int		wPlayer;			// barras do jogador
 		int		wPlayerAlways;		// 1 = sempre visiveis; 0 = so em combate/furia
 		int		wTarget;			// barras do alvo
+		int		wTargetRadius, wTargetStickyMs;	// raio (px) e tempo que a barra fica apos o alvo sair
 		int		wIcon;				// 1 = icone da furia ativa
 		int		wAnchor;			// 1 = alvo preso a barra de vida do jogo; 0 = posicao fixa
 		int		wStyle;				// 0 plana, 1 Sekiro (enche dos dois lados)
@@ -476,7 +482,18 @@ namespace
 		c.bigPostureMult = IniF("BigCreatures", "PostureMult", 1.5f);
 		GetPrivateProfileStringA("Supreme", "ActivationAnim", "", c.supAnim, sizeof(c.supAnim), g_iniPath);
 		c.bossEnabled	= IniI("Bosses", "Enabled", 1);
-		c.bossMinLevel	= IniI("Bosses", "MinLevel", 30);
+		c.bossLevelMargin	= IniI("Bosses", "LevelMargin", 7);
+		c.bigRageMult	= IniF("BigCreatures", "RageDurationMult", 1.5f);
+		c.magicDotMs	= IniI("Magic", "DotIntervalMs", 1000);
+		c.magicDotMult	= IniF("Magic", "DotPoiseMult", 0.5f);
+		c.deflectEnabled = IniI("Magic", "DeflectEnabled", 1);
+		c.perilEnabled	= IniI("Perilous", "Enabled", 1);
+		c.perilChance	= IniI("Perilous", "ChancePercent", 25);
+		c.perilWindowMs	= IniI("Perilous", "WindowMs", 1300);
+		c.perilCooldown	= IniF("Perilous", "CooldownSeconds", 12.0f);
+		c.perilDmgMult	= IniF("Perilous", "DamageMult", 1.5f);
+		c.perilParryPosture = IniF("Perilous", "ParryPosture", 0.5f);
+		c.perilRange	= IniF("Perilous", "Range", 700.0f);
 		c.bossHealthPct	= IniF("Bosses", "HealthPercent", 100.0f);
 		c.bossInvuln	= IniF("Bosses", "InvulnSeconds", 3.0f);
 		c.supEnabled	= IniI("Supreme", "Enabled", 1);
@@ -537,6 +554,8 @@ namespace
 		c.wPlayer		= IniI("HUD", "Player", 1);
 		c.wPlayerAlways	= IniI("HUD", "PlayerAlways", 0);
 		c.wTarget		= IniI("HUD", "Target", 1);
+		c.wTargetRadius	= IniI("HUD", "TargetRadius", 150);
+		c.wTargetStickyMs = IniI("HUD", "TargetStickyMs", 3000);
 		c.wIcon			= IniI("HUD", "RageIcon", 1);
 		c.wAnchor		= IniI("HUD", "TargetAnchor", 0);
 		c.wStyle		= IniI("HUD", "BarStyle", 1);
@@ -627,6 +646,19 @@ namespace
 	volatile DWORD	g_parryUntil = 0;		// janela do parry: o jogador carregou no bloqueio ha pouco
 	volatile DWORD	g_parryReadyAt = 0;		// ate quando a janela esta em recarga
 	volatile LONG	g_parryHitDone = 0;		// o parry desta janela ja foi confirmado
+	struct PerilSlot { int prev; DWORD ready; DWORD until; };
+	std::map<UInt32, PerilSlot> g_peril;
+	DWORD g_perilTick = 0;
+	volatile LONG	g_deflectOn = 0;		// parry numa magia: enquanto segurar o bloqueio, a magia e devolvida
+	volatile DWORD	g_deflectStart = 0;
+	volatile UInt32	g_parryAtkId = 0;		// anti-duplicacao: um ataque conta um parry so
+	volatile DWORD	g_parryAtkTick = 0;
+	struct MagicAtk { UInt32 id; DWORD tick; };
+	MagicAtk		g_magicAtk[4];			// atacantes de magia recentes do jogador
+	struct DotEntry { UInt32 key; DWORD tick; };
+	DotEntry		g_dot[16];				// limitador de dano continuo (por alvo+origem+feitico)
+	DWORD			g_reflectTick[4];
+	UInt32			g_reflectId[4];
 	volatile LONG	g_blockHeld = 0;		// impede rearmar o parry enquanto o botao continua premido
 	volatile LONG	g_blockInputLogCount = 0;
 	volatile LONG	g_hdCalls = 0, g_hdParryZero = 0, g_hdRage = 0, g_hdBleed = 0, g_hdLogged = 0, g_hdPlayerLogged = 0;
@@ -718,7 +750,7 @@ namespace
 		bool	boss;
 	};
 
-	// Boss = NPC unico (flag do jogo) com nivel minimo e que nao e companheiro do jogador.
+	// Boss = NPC com nivel >= nivel do jogador + margem (e que nao e companheiro do jogador).
 	bool IsBossActor(Actor * a)
 	{
 		__try
@@ -727,8 +759,10 @@ namespace
 			if(a->flags1 & Actor::kFlags_IsPlayerTeammate) return false;
 			TESForm * b = a->baseForm;
 			if(!b || b->formType != kFormType_NPC) return false;
-			if(!(((TESNPC *)b)->actorData.flags & 0x20)) return false;	// Unique
-			return (int)CALL_MEMBER_FN(a, GetLevel)() >= g_cfg.bossMinLevel;
+			Actor * pl = (Actor *)Engine::Player();
+			if(!pl) return false;
+			// boss = inimigo com N niveis acima do jogador (margem configuravel)
+			return (int)CALL_MEMBER_FN(a, GetLevel)() >= (int)CALL_MEMBER_FN(pl, GetLevel)() + g_cfg.bossLevelMargin;
 		}
 		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
 	}
@@ -1446,6 +1480,20 @@ namespace
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
 	}
 
+	// Deflect: o Papyrus relanca o feitico no conjurador (sender = conjurador, tag = formID do feitico em decimal).
+	void SendReflectEvent(TESObjectREFR * ref, UInt32 spellId)
+	{
+		if(!ref || !spellId) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		char tag[24];
+		_snprintf(tag, sizeof(tag), "%u", (unsigned)spellId);
+		tag[23] = 0;
+		PoiseModEvent evn("NahIDWin_Reflect", tag, 0.0f, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
+	}
+
 	void SendRageEvent(TESObjectREFR * ref, float seconds, const char * tag = "")
 	{
 		if(!ref) return;
@@ -1469,6 +1517,7 @@ namespace
 		g_parryReadyAt = 0;
 		g_parryHitDone = 0;
 		g_blockHeld = 0;
+		g_peril.clear(); g_deflectOn = 0; g_parryAtkId = 0; memset(g_magicAtk, 0, sizeof(g_magicAtk)); memset(g_dot, 0, sizeof(g_dot));
 		g_playerBarValid = false;
 		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
@@ -1567,6 +1616,56 @@ namespace
 
 	// Parry: o atacante (NPC) ganha postura e, se nao estiver imune, leva stagger (ou BleedOut se a postura quebrar).
 	// Devolve o tipo de evento a enviar ao atacante (0 = nenhum).
+	void NoteMagicAttacker(UInt32 id, DWORD now)
+	{
+		int slot = 0;
+		for(int i = 0; i < 4; i++)
+		{
+			if(g_magicAtk[i].id == id) { slot = i; break; }
+			if(g_magicAtk[i].tick < g_magicAtk[slot].tick) slot = i;
+		}
+		g_magicAtk[slot].id = id; g_magicAtk[slot].tick = now;
+	}
+	// Deflect: depois de um parry numa magia, enquanto o jogador segura o bloqueio e tem estamina.
+	bool DeflectActive(DWORD now)
+	{
+		if(!g_cfg.deflectEnabled || !g_deflectOn) return false;
+		if(g_blockHeld == 0 || now - g_deflectStart > 20000) { g_deflectOn = 0; return false; }
+		PlayerCharacter * p = Engine::Player();
+		float c = 1.0f, m = 1.0f;
+		if(!p || Engine::LifeState((Actor *)p) != 0) { g_deflectOn = 0; return false; }
+		if(ReadAV((Actor *)p, 26, &c, &m) && c <= 0.5f) { g_deflectOn = 0; return false; }
+		return true;
+	}
+	bool DeflectBlocks(UInt32 attackerId, DWORD now)
+	{
+		if(!DeflectActive(now)) return false;
+		for(int i = 0; i < 4; i++) if(g_magicAtk[i].id == attackerId && now - g_magicAtk[i].tick < 1500) return true;
+		return false;
+	}
+	// Limitador do dano continuo (Chamas, raios...): devolve true se este golpe de magia deve ser ignorado; *sustained = fluxo continuo.
+	bool MagicThrottle(UInt32 victim, UInt32 attacker, UInt32 source, DWORD now, bool * sustained)
+	{
+		*sustained = false;
+		if(g_cfg.magicDotMs <= 0) return false;
+		const UInt32 key = victim * 31u ^ attacker * 17u ^ source * 7u ^ 0x9e3779b9u;
+		int slot = 0;
+		for(int i = 0; i < 16; i++)
+		{
+			if(g_dot[i].key == key)
+			{
+				const DWORD dt = now - g_dot[i].tick;
+				if(dt < (DWORD)g_cfg.magicDotMs) return true;
+				if(dt < 3000) *sustained = true;
+				g_dot[i].tick = now;
+				return false;
+			}
+			if(g_dot[i].tick < g_dot[slot].tick) slot = i;
+		}
+		g_dot[slot].key = key; g_dot[slot].tick = now;
+		return false;
+	}
+
 	// A janela do parry: so o tempo decide (nao depende de o jogo marcar o golpe como bloqueado).
 	bool ParryWindowActive(DWORD now)
 	{
@@ -1638,6 +1737,93 @@ namespace
 		}
 	}
 
+	Actor * ActorFromFormId(UInt32 id);
+	// ---- ataque perigoso (bosses e criaturas grandes): aviso, ignora o bloqueio; esquivar ou fazer parry
+	bool PerilousActive(UInt32 id, DWORD now)
+	{
+		if(!g_cfg.perilEnabled) return false;
+		bool r = false;
+		Lock();
+		{
+			std::map<UInt32, PerilSlot>::iterator it = g_peril.find(id);
+			if(it != g_peril.end() && now < it->second.until) r = true;
+		}
+		Unlock();
+		return r;
+	}
+	void PerilousClear(UInt32 id)
+	{
+		Lock();
+		{
+			std::map<UInt32, PerilSlot>::iterator it = g_peril.find(id);
+			if(it != g_peril.end()) it->second.until = 0;
+		}
+		Unlock();
+	}
+	// Estado de ataque do NPC (0 nada, 1 preparar, 2 golpe...) se for boss/grande e estiver perto do jogador; -1 caso contrario.
+	int ReadPerilousCandidate(UInt32 id)
+	{
+		__try
+		{
+			Actor * a = ActorFromFormId(id);
+			PlayerCharacter * pc = Engine::Player();
+			if(!a || !pc || id == 0x14 || (a->flags1 & Actor::kFlags_IsPlayerTeammate)) return -1;
+			if(Engine::LifeState(a) != 0) return -1;
+			ActorStats st;
+			if(!ReadActorStats(a, &st)) return -1;
+			if(!st.boss && !(st.mass >= g_cfg.kbGiantMass)) return -1;
+			const float dx = a->pos.x - pc->pos.x, dy = a->pos.y - pc->pos.y;
+			if(dx * dx + dy * dy > g_cfg.perilRange * g_cfg.perilRange) return -1;
+			return (int)((a->actorState.flags08 >> 28) & 0xF);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return -1; }
+	}
+	void SendPerilousEvent(UInt32 id)
+	{
+		TESObjectREFR * ref = (TESObjectREFR *)ActorFromFormId(id);
+		if(!ref) return;
+		EventDispatcher<PoiseModEvent> * d = NULL;
+		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
+		if(!d) return;
+		PoiseModEvent evn("NahIDWin_Perilous", "", 0.0f, (TESForm *)ref);
+		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
+	}
+	void TickPerilous(DWORD now)
+	{
+		if(!g_cfg.perilEnabled || now - g_perilTick < 60) return;
+		g_perilTick = now;
+		UInt32 ids[256]; int n = 0;
+		Lock();
+		for(std::set<UInt32>::iterator it = g_combatants.begin(); it != g_combatants.end() && n < 256; ++it) ids[n++] = *it;
+		Unlock();
+		for(int i = 0; i < n; i++)
+		{
+			const int as = ReadPerilousCandidate(ids[i]);
+			if(as < 0) continue;
+			bool start = false;
+			Lock();
+			{
+				PerilSlot & sl = g_peril[ids[i]];
+				const bool attacking = (as == 1 || as == 2);
+				if(attacking && sl.prev == 0 && now >= sl.ready && (rand() % 100) < g_cfg.perilChance)
+				{
+					sl.until = now + (DWORD)g_cfg.perilWindowMs;
+					sl.ready = now + (DWORD)(g_cfg.perilCooldown * 1000.0f);
+					start = true;
+				}
+				sl.prev = (as == 0) ? 0 : (attacking ? 1 : sl.prev);
+				if(as == 0 || as >= 3) sl.prev = 0;
+				if(g_peril.size() > 400) g_peril.clear();
+			}
+			Unlock();
+			if(start)
+			{
+				_MESSAGE("PERILOUS attack: %08X (warning)", ids[i]);
+				SendPerilousEvent(ids[i]);
+			}
+		}
+	}
+
 	int ParryAttacker(const HitInfo & h, DWORD now)
 	{
 		if(!h.attackerIsActor || !h.attackerActor || h.attacker.isPlayer || !h.attacker.alive) return 0;
@@ -1653,7 +1839,9 @@ namespace
 			if(frozen) kind = 0;
 			else if(g_cfg.postureEnabled)
 			{
-				st.pCur += mpA * g_cfg.parryAttackerPosture;
+				float pm = g_cfg.parryAttackerPosture;
+				if(PerilousActive(h.attackerId, now)) pm += g_cfg.perilParryPosture;
+				st.pCur += mpA * pm;
 				st.pLastHit = now;
 				if(st.pCur >= st.pMax)
 				{
@@ -1698,14 +1886,43 @@ namespace
 		// Hits ambientais sem ator atacante (por exemplo colisao/interacao com teias)
 		// nao devem gerar poise, parry ou stagger como se fossem golpes de combate.
 		if(!h.attackerIsActor && h.attackerId == 0) return;
+		bool dotSustained = false;
+		if(h.sourceKind == 2 && h.attackerIsActor && !h.attacker.isPlayer)
+		{
+			if(h.victim.isPlayer)
+			{
+				NoteMagicAttacker(h.attackerId, now);
+				if(DeflectActive(now))
+				{
+					// magia durante o deflect: sem dano nem poise/postura; devolvida a quem a lancou (no maximo 1 vez por segundo por conjurador)
+					int slot = 0; bool fire = true;
+					for(int i = 0; i < 4; i++)
+					{
+						if(g_reflectId[i] == h.attackerId) { slot = i; if(now - g_reflectTick[i] < 1000) fire = false; break; }
+						if(g_reflectTick[i] < g_reflectTick[slot]) slot = i;
+					}
+					if(fire)
+					{
+						g_reflectId[slot] = h.attackerId; g_reflectTick[slot] = now;
+						_MESSAGE("DEFLECT: magic %08X from %08X reflected", h.sourceId, h.attackerId);
+						SendReflectEvent((TESObjectREFR *)h.attackerActor, h.sourceId);
+					}
+					return;
+				}
+			}
+			if(MagicThrottle(h.victim.id, h.attackerId, h.sourceId, now, &dotSustained)) return;
+		}
 		InterlockedIncrement(&g_hits);
 		NoteCombatant(h.victimRef, h.victim.id);
 		if(h.attackerIsActor && h.attackerActor) NoteCombatant((TESObjectREFR *)h.attackerActor, h.attacker.id);
 
 		const float mx = ComputeMax(h.victim);
 		const float mp = ComputeMaxPosture(h.victim);
-		const float dmg = PoiseDamage(h);	// dano "cheio" (sem bloqueio)
-		const bool blocked = (h.flags & TESHitEvent::kFlag_Blocked) != 0;
+		float dmg = PoiseDamage(h);	// dano "cheio" (sem bloqueio)
+		if(dotSustained) dmg *= g_cfg.magicDotMult;
+		const bool perilHit = h.victim.isPlayer && h.attackerIsActor && h.sourceKind != 2 && PerilousActive(h.attackerId, now);
+		if(perilHit) dmg *= g_cfg.perilDmgMult;
+		const bool blocked = !perilHit && (h.flags & TESHitEvent::kFlag_Blocked) != 0;	// o ataque perigoso ignora o bloqueio
 		const bool heavyHit = (h.flags & (TESHitEvent::kFlag_PowerAttack | TESHitEvent::kFlag_Bash)) != 0;
 
 		// Janela do parry: decidida so pelo tempo. Dentro dela o jogador esta imune (vida, estamina, poise, postura, stagger).
@@ -1730,6 +1947,23 @@ namespace
 			if(InterlockedExchange(&g_parryHitDone, 1) == 0) parry = true;
 		}
 
+		if(parry)
+		{
+			// um ataque conta um parry so (as duas vias de deteccao podiam contar o mesmo golpe duas vezes)
+			if(h.attackerId == g_parryAtkId && now - g_parryAtkTick < 500) parry = false;
+			else { g_parryAtkId = h.attackerId; g_parryAtkTick = now; }
+			if(parry && h.sourceKind == 2 && g_cfg.deflectEnabled)
+			{
+				g_deflectOn = 1; g_deflectStart = now;
+				_MESSAGE("DEFLECT: armed (hold block to keep reflecting magic)");
+			}
+		}
+
+		if(perilHit)
+		{
+			if(!parry && !immune) _MESSAGE("PERILOUS attack landed on player (block ignored) by %08X", h.attackerId);
+			if(parry) _MESSAGE("PERILOUS attack parried: %08X takes extra posture", h.attackerId);
+		}
 		const float poiseDmg = (parry || immune) ? 0.0f : (blocked ? dmg * g_cfg.blockedMult : dmg);
 		float lowHp = 1.0f;
 		if(h.victim.hpMax > 0.0f)
@@ -1779,7 +2013,7 @@ namespace
 				const float sf = (st.pMax > 0.0f) ? (st.pCur / st.pMax) : 0.0f;
 				if((sf >= g_cfg.rageNpcPosture || pf <= g_cfg.rageNpcPoise) && (rand() % 100) < g_cfg.rageNpcChance)
 				{
-					st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * 1000.0f);
+					st.rageUntil = now + (DWORD)(g_cfg.rageSeconds * (h.victim.mass >= g_cfg.kbGiantMass ? g_cfg.bigRageMult : 1.0f) * 1000.0f);
 					st.rageReadyAt = now + (DWORD)(g_cfg.rageNpcCooldown * 1000.0f);
 					raging = true;
 					rageStarted = true;
@@ -1891,8 +2125,9 @@ namespace
 		{
 			InterlockedIncrement(&g_rages);
 			_MESSAGE("RAGE (NPC): %08X is immune for %.1f s", h.victim.id, g_cfg.rageSeconds);
-			if(h.victimRef && !h.victim.isPlayer) SendRageEvent(h.victimRef, g_cfg.rageSeconds);
-			if(g_cfg.rageNpcCostPercent > 0.0f && h.victimRef)
+			const bool bigV = h.victim.mass >= g_cfg.kbGiantMass;
+			if(h.victimRef && !h.victim.isPlayer) SendRageEvent(h.victimRef, g_cfg.rageSeconds * (bigV ? g_cfg.bigRageMult : 1.0f));
+			if(g_cfg.rageNpcCostPercent > 0.0f && h.victimRef && !h.victim.boss && !bigV)
 			{
 				float cur = 0.0f, m = 0.0f;
 				const UInt32 av = g_cfg.rageCostType == 0 ? 24 : 26;
@@ -1918,6 +2153,7 @@ namespace
 				if(ReadAV((Actor *)h.victimRef, 26, &c, &m) && m > 0.0f) RestoreAV((Actor *)h.victimRef, 26, m * g_cfg.parryDefStaminaRecover);
 			}
 			const int ak = ParryAttacker(h, now);
+			PerilousClear(h.attackerId);
 			if(ak && h.attackerActor)
 			{
 				if(g_cfg.staggerMode == 1 && ak != 4) NativeStagger((TESObjectREFR *)h.attackerActor);
@@ -2080,7 +2316,13 @@ namespace
 			const char * why = "";
 
 			// Janela do parry: so o tempo decide (e o atacante estar a frente). Fora dela o dano e o bloqueio normal do jogo ficam como estao.
-			if(isPlayer && !g_cfg.inpaMode && g_cfg.parryNoDamage && attacker && attacker != self && ParryWindowActive(now) && InFront(self, attacker))
+			if(isPlayer && attacker && attacker != self && DeflectBlocks(attacker->formID, now))
+			{
+				result = 0.0f;
+				why = "deflect";
+				InterlockedIncrement(&g_hdParryZero);
+			}
+			else if(isPlayer && !g_cfg.inpaMode && g_cfg.parryNoDamage && attacker && attacker != self && ParryWindowActive(now) && InFront(self, attacker))
 			{
 				result = 0.0f;
 				why = "parry";
@@ -2110,6 +2352,7 @@ namespace
 						InterlockedIncrement(&g_hdBleed);
 					}
 				}
+				if(isPlayer && attacker && attacker != self && PerilousActive(attacker->formID, now)) { mult *= g_cfg.perilDmgMult; if(why[0] == 0) why = "perilous"; }
 				// bonus de dano de quem esta em furia (jogador ou NPC), em armas e magias
 				if(g_cfg.rageEnabled && attacker && attacker != self && attacker->formID != id)
 				{
@@ -3039,7 +3282,87 @@ namespace
 		}
 	}
 
-	// Alvo atual: o da mira/lock-on do jogo; se nao houver, o que esta debaixo da mira (crosshair).
+	// Lock-on do mod Soft Target LE (se estiver instalado e com as funcoes exportadas).
+	UInt32 SoftTargetId()
+	{
+		static bool searched = false;
+		typedef UInt32 (__cdecl * GetFn)();
+		static GetFn lockFn = NULL, assistFn = NULL;
+		if(!searched)
+		{
+			searched = true;
+			HMODULE m = GetModuleHandleA("SoftTargetLE.dll");
+			if(m)
+			{
+				lockFn = (GetFn)GetProcAddress(m, "SoftTarget_GetLockedFormID");
+				assistFn = (GetFn)GetProcAddress(m, "SoftTarget_GetAssistFormID");
+			}
+			_MESSAGE("hud target: Soft Target LE %s", (lockFn || assistFn) ? "found (lock-on read directly)" : "not found/without exports");
+		}
+		__try
+		{
+			UInt32 id = lockFn ? lockFn() : 0;
+			if(!id && assistFn) id = assistFn();
+			return id;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
+	}
+
+	Actor * ActorFromFormId(UInt32 id)
+	{
+		__try
+		{
+			if(!id) return NULL;
+			TESForm * f = LookupFormByID(id);
+			if(f && f->formType == kFormType_Character) return (Actor *)f;
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { }
+		return NULL;
+	}
+
+	// Distancia (px) do ator ao centro do ecra; <0 se invalido/fora do ecra.
+	float ScreenDistFromCenter(UInt32 id)
+	{
+		__try
+		{
+			Actor * a = ActorFromFormId(id);
+			if(!a || id == 0x14 || (a->flags1 & Actor::kFlags_IsPlayerTeammate)) return -1.0f;
+			if(Engine::LifeState(a) != 0) return -1.0f;
+			float x, y, z, sx, sy;
+			if(!ReadHeadPos(a, &x, &y, &z) || !ProjectPoint(x, y, z, &sx, &sy)) return -1.0f;
+			if(sx < 0.0f || sx > 1.0f || sy < 0.0f || sy > 1.0f) return -1.0f;
+			const float dx = (sx - 0.5f) * (float)g_cfg.wScreenW, dy = (sy - 0.5f) * (float)g_cfg.wScreenH;
+			return sqrtf(dx * dx + dy * dy);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return -1.0f; }
+	}
+
+	UInt32		g_radId = 0;
+	DWORD		g_radTick = 0, g_radSeen = 0;
+	// Inimigo em combate mais perto do centro do ecra, dentro do raio. Calculado no maximo 10 vezes por segundo.
+	UInt32 PickByRadius(DWORD now)
+	{
+		if(g_cfg.wTargetRadius <= 0) return 0;
+		if(now - g_radTick < 100) return g_radId;
+		g_radTick = now;
+		UInt32 ids[256]; int n = 0;
+		Lock();
+		for(std::set<UInt32>::iterator it = g_combatants.begin(); it != g_combatants.end() && n < 256; ++it) ids[n++] = *it;
+		Unlock();
+		UInt32 best = 0; float bestD = (float)g_cfg.wTargetRadius;
+		for(int i = 0; i < n; i++)
+		{
+			const float d = ScreenDistFromCenter(ids[i]);
+			if(d >= 0.0f && d <= bestD) { bestD = d; best = ids[i]; }
+		}
+		g_radId = best;
+		return best;
+	}
+
+	UInt32		g_stickyId = 0;
+	DWORD		g_stickySeen = 0;
+	// Alvo atual: lock-on do Soft Target LE; lock-on do jogo; crosshair; inimigo perto do centro do ecra; e o ultimo alvo durante uns segundos.
+	// how: 3 = Soft Target, 1 = lock-on do jogo, 2 = crosshair, 4 = raio no ecra, 5 = persistente
 	Actor * CurrentTarget(int * how)
 	{
 		__try
@@ -3047,13 +3370,34 @@ namespace
 			*how = 0;
 			PlayerCharacter * pc = Engine::Player();
 			if(!pc) return NULL;
-			Actor * t = ActorFromHandle(pc->targetHandle);
-			if(t) { *how = 1; return t; }
-			CrosshairRefHandleHolder * ch = CrosshairRefHandleHolder::GetSingleton();
-			if(ch)
+			const DWORD now = GetTickCount();
+			Actor * t = ActorFromFormId(SoftTargetId());
+			if(t && Engine::LifeState(t) == 0) *how = 3;
+			else
 			{
-				t = ActorFromHandle(ch->CrosshairRefHandle());
-				if(t) { *how = 2; return t; }
+				t = ActorFromHandle(pc->targetHandle);
+				if(t) *how = 1;
+				else
+				{
+					CrosshairRefHandleHolder * ch = CrosshairRefHandleHolder::GetSingleton();
+					if(ch) t = ActorFromHandle(ch->CrosshairRefHandle());
+					if(t) *how = 2;
+					else
+					{
+						t = ActorFromFormId(PickByRadius(now));
+						if(t) *how = 4;
+					}
+				}
+			}
+			if(t && t->formID != 0x14)
+			{
+				g_stickyId = t->formID; g_stickySeen = now;
+				return t;
+			}
+			if(g_stickyId && g_cfg.wTargetStickyMs > 0 && now - g_stickySeen < (DWORD)g_cfg.wTargetStickyMs)
+			{
+				t = ActorFromFormId(g_stickyId);
+				if(t && Engine::LifeState(t) == 0) { *how = 5; return t; }
 			}
 			return NULL;
 		}
@@ -3081,6 +3425,7 @@ namespace
 		PutBool(o, "ready", ready);
 		if(!ready) return;
 		TickSupreme(now);
+		TickPerilous(now);
 		SyncEssential();
 
 		BarInfo pi = { 1.0f, 0, 1.0f, false, 0.0f };
@@ -3117,7 +3462,7 @@ namespace
 			if(nowId != lastId)
 			{
 				lastId = nowId;
-				if(logged < 40) { logged++; _MESSAGE("hud widget: target %08X (%s)", nowId, nowId ? (how == 1 ? "lock-on" : "crosshair") : "none"); }
+				if(logged < 40) { logged++; _MESSAGE("hud widget: target %08X (%s)", nowId, nowId ? (how == 3 ? "soft target" : (how == 1 ? "lock-on" : (how == 2 ? "crosshair" : (how == 4 ? "screen radius" : "sticky")))) : "none"); }
 			}
 		}
 		PutBool(o, "tOn", tOn);

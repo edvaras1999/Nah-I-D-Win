@@ -138,3 +138,12 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - **Fogo do Supremo Rage**: feitico `NahIDWin_SupFire` (0x845), so no pacote privado (efeitos do jogo base). `[Supreme] ActivationAnim` = evento de animacao opcional (experimental).
 - **HUD**: a barra de postura pulsa com contorno vermelho a partir de 80% e pisca inteira ao quebrar.
 - **Menu**: opcoes de bosses, criaturas grandes e execucao no bloco das vidas extra.
+
+## v0.17.0
+- Bosses: inimigo com `[Bosses] LevelMargin` (7) niveis acima do jogador.
+- Magia continua: no maximo 1 golpe por segundo; poise/postura x `[Magic] DotPoiseMult`. Deflexao: parry numa magia + segurar bloqueio devolve a magia (`[Magic] DeflectEnabled`).
+- Parry nao conta duas vezes o mesmo ataque.
+- Gigantes/dragoes: furia x`[BigCreatures] RageDurationMult`, sem custo de vida (tambem bosses). Menu: o slider "Estamina dos dragoes" foi trocado pelo bloco "Bosses, gigantes e dragoes".
+- Ataque perigoso (`[Perilous]`): aviso com simbolo, ignora o bloqueio, parry da postura extra ao atacante.
+- Barra do alvo: lock-on do Soft Target LE (precisa do SoftTargetLE.dll novo), lock-on do jogo, crosshair, ou inimigo a menos de `[HUD] TargetRadius` px do centro; fica `TargetStickyMs` ms depois.
+- Menu: removidas 8 linhas (ficam no .ini) por causa do limite de 128 entradas do Papyrus.

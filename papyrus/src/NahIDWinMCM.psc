@@ -92,7 +92,7 @@ int sFlag = 0
 ; 31 player_difficulty_on 32 player_taken 33 npc_difficulty_on 34 npc_taken
 
 int Function GetVersion()
-	return 26
+	return 27
 EndFunction
 
 Event OnVersionUpdate(int a_version)
@@ -483,10 +483,10 @@ EndFunction
 ; blocos: 1 Poise, 2 Postura, 3 Furia, 4 Exaustao, 5 Estamina (nossa), 6 Bloqueio dos NPCs, 7 Stagger e empurrao,
 ;         8 Multiplicadores por arma, 9 Armadura, 10 HUD, 11 Sistema, 12 Bloqueio normal
 Function BuildTable()
-	if count > 0 && tableRev == 8
+	if count > 0 && tableRev == 9
 		return
 	endif
-	tableRev = 8
+	tableRev = 9
 	sBlk = new int[128]
 	sType = new int[128]
 	sSec = new string[128]
@@ -553,7 +553,6 @@ Function BuildTable()
 	AddSetting(7, 1, "Stagger", "LightPlayer", "Stagger leve no jogador", "Light stagger on player", "Desligado = o jogador nao e travado por golpes leves.", "Off = the player is not locked by light hits.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 1, "Stagger", "LightNPCs", "Stagger leve nos NPCs", "Light stagger on NPCs", "", "", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 0, "Stagger", "LightCooldownMs", "Espaco do stagger leve - NPCs (ms)", "Light stagger spacing - NPCs (ms)", "Tempo minimo entre dois staggers leves.", "Minimum time between two light staggers.", 100.0, 3000.0, 100.0, 700.0)
-	AddSetting(7, 0, "Stagger", "LightCooldownPlayerMs", "Espaco do stagger leve - jogador (ms)", "Light stagger spacing - player (ms)", "Mais espaco = menos tempo travado a levar golpes.", "More spacing = less time locked while being hit.", 100.0, 5000.0, 100.0, 1500.0)
 	AddSetting(7, 0, "Stagger", "PlayerImmuneAfterSeconds", "Imunidade do jogador apos stagger (s)", "Player immunity after stagger (s)", "Depois de levares um stagger do jogo, ficas este tempo sem o levar de novo (para bloquear ou esquivar). 0 = desligado. Staggers pesados do mod passam sempre.", "After the game staggers you, you cannot be staggered again for this long (to block or dodge). 0 = off. The mod heavy staggers always go through.", 0.0, 5.0, 0.1, 1.5)
 	AddSetting(7, 1, "Stagger", "MediumOnPowerAttack", "Stagger medio em golpe forte", "Medium stagger on power attack", "Golpe forte ou de escudo sem bloquear da stagger medio.", "An unblocked power attack or bash causes a medium stagger.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(7, 1, "Knockback", "Enabled", "Empurrao ligado", "Knockback enabled", "Empurrao no stagger pesado, so em condicoes especificas.", "Knockback on heavy stagger, only in specific conditions.", 0.0, 1.0, 1.0, 1.0)
@@ -575,8 +574,6 @@ Function BuildTable()
 	AddSetting(8, 0, "Stamina", "TypeMult8", "Custo: Cajado (x)", "Cost: Staff (x)", "Multiplicador do custo de estamina para este tipo de arma.", "Stamina cost multiplier for this weapon type.", 0.0, 4.0, 0.1, 0.6)
 	AddSetting(8, 0, "Stamina", "TypeMult9", "Custo: Feitico (x)", "Cost: Spell (x)", "Multiplicador do custo de estamina para este tipo de arma.", "Stamina cost multiplier for this weapon type.", 0.0, 4.0, 0.1, 0.0)
 	AddSetting(8, 0, "Stamina", "TypeMult10", "Custo: Escudo (x)", "Cost: Shield (x)", "Multiplicador do custo de estamina para este tipo de arma.", "Stamina cost multiplier for this weapon type.", 0.0, 4.0, 0.1, 1.0)
-	AddSetting(8, 0, "Stamina", "TypeMult11", "Custo: Tocha (x)", "Cost: Torch (x)", "Multiplicador do custo de estamina para este tipo de arma.", "Stamina cost multiplier for this weapon type.", 0.0, 4.0, 0.1, 0.5)
-	AddSetting(8, 0, "Stamina", "TypeMult12", "Custo: Besta (x)", "Cost: Crossbow (x)", "Multiplicador do custo de estamina para este tipo de arma.", "Stamina cost multiplier for this weapon type.", 0.0, 4.0, 0.1, 0.8)
 	AddSetting(9, 0, "Stamina", "ArmorCostFactor", "Armadura aumenta o custo", "Armor raises the cost", "Custo x (1 + armadura/100 x isto). Armadura pesada cansa mais.", "Cost x (1 + armor/100 x this). Heavy armor tires faster.", 0.0, 2.0, 0.05, 0.25)
 	AddSetting(9, 1, "Stamina", "ArmorRegenEnabled", "Armadura abranda a regeneracao", "Armor slows regeneration", "A armadura reduz a regeneracao de estamina do jogador. Desliga se achas a regeneracao lenta.", "Armor reduces the player's stamina regeneration. Turn off if regeneration feels slow.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(9, 0, "Stamina", "ArmorRegenFactor", "Intensidade da regeneracao", "Regeneration strength", "Regeneracao % = 100 / (1 + armadura/100 x isto).", "Regeneration % = 100 / (1 + armor/100 x this).", 0.0, 2.0, 0.05, 0.3)
@@ -609,12 +606,18 @@ Function BuildTable()
 	AddSetting(14, 0, "Lives", "HealthPercent", "Vida ao voltar (%)", "Health on return (%)", "Percentagem da vida maxima com que voltas.", "Percent of max health you return with.", 10.0, 100.0, 5.0, 50.0)
 	AddSetting(14, 0, "Lives", "GoldLossPercent", "Ouro perdido por morte (%)", "Gold lost per death (%)", "Percentagem do ouro que perdes ao usar uma vida. Sem ouro, nao perdes nada.", "Percent of your gold lost when a life is used. No gold, nothing lost.", 0.0, 50.0, 1.0, 25.0)
 	AddSetting(14, 0, "Lives", "InvulnSeconds", "Invulnerabilidade apos voltar (s)", "Invulnerability after return (s)", "Segundos sem levar dano depois de usares uma vida.", "Seconds without damage after a life is used.", 0.0, 10.0, 0.5, 3.0)
-	AddSetting(14, 1, "Bosses", "Enabled", "Bosses com 2 vidas", "Bosses with 2 lives", "NPC unico de nivel alto: ao gastar a 1a vida cai em bleedout e volta com a vida cheia.", "High-level unique NPC: when the 1st life ends it goes into bleedout and returns with full health.", 0.0, 1.0, 1.0, 1.0)
-	AddSetting(14, 0, "Bosses", "MinLevel", "Bosses: nivel minimo", "Bosses: minimum level", "Nivel minimo de um NPC unico para ser tratado como boss.", "Minimum level for a unique NPC to count as a boss.", 1.0, 81.0, 1.0, 30.0)
-	AddSetting(14, 0, "Bosses", "PoiseMult", "Bosses: poise (x)", "Bosses: poise (x)", "Multiplicador do poise dos bosses.", "Poise multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
-	AddSetting(14, 0, "Bosses", "PostureMult", "Bosses: postura (x)", "Bosses: posture (x)", "Multiplicador da postura dos bosses.", "Posture multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
-	AddSetting(14, 0, "BigCreatures", "PoiseMult", "Gigantes/dragoes: poise (x)", "Giants/dragons: poise (x)", "Multiplicador do poise das criaturas grandes (massa alta).", "Poise multiplier for large creatures (high mass).", 0.5, 4.0, 0.1, 1.5)
-	AddSetting(14, 0, "BigCreatures", "PostureMult", "Gigantes/dragoes: postura (x)", "Giants/dragons: posture (x)", "Multiplicador da postura das criaturas grandes.", "Posture multiplier for large creatures.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(16, 1, "Bosses", "Enabled", "Bosses com 2 vidas", "Bosses with 2 lives", "NPC unico de nivel alto: ao gastar a 1a vida cai em bleedout e volta com a vida cheia.", "High-level unique NPC: when the 1st life ends it goes into bleedout and returns with full health.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(16, 0, "Bosses", "LevelMargin", "Bosses: niveis acima do jogador", "Bosses: levels above player", "Inimigo com este numero de niveis acima do teu (ou mais) vira boss.", "An enemy this many levels above yours (or more) becomes a boss.", 3.0, 20.0, 1.0, 7.0)
+	AddSetting(16, 0, "Bosses", "PoiseMult", "Bosses: poise (x)", "Bosses: poise (x)", "Multiplicador do poise dos bosses.", "Poise multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(16, 0, "Bosses", "PostureMult", "Bosses: postura (x)", "Bosses: posture (x)", "Multiplicador da postura dos bosses.", "Posture multiplier for bosses.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(16, 0, "BigCreatures", "PoiseMult", "Gigantes/dragoes: poise (x)", "Giants/dragons: poise (x)", "Multiplicador do poise das criaturas grandes (massa alta).", "Poise multiplier for large creatures (high mass).", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(16, 0, "BigCreatures", "RageDurationMult", "Gigantes/dragoes: duracao da furia (x)", "Giants/dragons: rage duration (x)", "Multiplica a duracao da furia das criaturas grandes. Nao aumenta o dano que levam.", "Multiplies rage duration of large creatures. Does not increase damage they take.", 1.0, 3.0, 0.1, 1.5)
+	AddSetting(16, 0, "BigCreatures", "PostureMult", "Gigantes/dragoes: postura (x)", "Giants/dragons: posture (x)", "Multiplicador da postura das criaturas grandes.", "Posture multiplier for large creatures.", 0.5, 4.0, 0.1, 1.5)
+	AddSetting(16, 1, "Perilous", "Enabled", "Ataque perigoso (bosses/gigantes)", "Perilous attack (bosses/giants)", "Aviso (simbolo) e ataque que ignora o bloqueio: esquiva ou faz parry. O parry da muita postura ao atacante.", "Warning (symbol) and an attack that ignores block: dodge or parry. A parry deals big posture damage to the attacker.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(16, 0, "Perilous", "ChancePercent", "Ataque perigoso: chance (%)", "Perilous: chance (%)", "Probabilidade de um ataque de boss/gigante ser perigoso.", "Chance that a boss/giant attack is perilous.", 0.0, 100.0, 5.0, 25.0)
+	AddSetting(16, 0, "Perilous", "ParryPosture", "Ataque perigoso: postura no parry", "Perilous: parry posture", "Postura extra (fracao do maximo) que o atacante leva se fizeres parry.", "Extra posture (fraction of max) the attacker takes if you parry.", 0.1, 1.0, 0.05, 0.5)
+	AddSetting(16, 1, "Magic", "DeflectEnabled", "Deflexao de magia", "Magic deflect", "Depois de um parry numa magia, enquanto seguras o bloqueio a magia e devolvida ao conjurador.", "After parrying a spell, while you hold block the spell is reflected to the caster.", 0.0, 1.0, 1.0, 1.0)
+	AddSetting(16, 0, "Magic", "DotPoiseMult", "Magia continua: poise/postura (x)", "Continuous magic: poise/posture (x)", "Fracao do poise/postura de magia continua (Chamas...). O golpe conta no maximo 1 vez por segundo.", "Fraction of poise/posture from continuous magic (Flames...). Counts at most once per second.", 0.0, 1.0, 0.05, 0.5)
 	AddSetting(14, 1, "Execution", "Enabled", "Execucao garantida", "Guaranteed execution", "Acertar uma arma num alvo com a postura quebrada executa-o (feitico do Inpa). Bosses so depois da 1a vida.", "Hitting a posture-broken target with a weapon executes it (Inpa spell). Bosses only after their 1st life.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(14, 1, "Execution", "KillBigCreatures", "Executar gigantes/dragoes", "Execute giants/dragons", "Criaturas grandes morrem de vez (sem animacao de execucao).", "Large creatures die outright (no execution animation).", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(15, 1, "Supreme", "Enabled", "Supremo Rage ligado", "Supreme Rage enabled", "Aura de fogo: tudo o que a furia da, mais dano em area. Cooldown muito longo.", "Fire aura: everything rage gives, plus area damage. Very long cooldown.", 0.0, 1.0, 1.0, 1.0)
@@ -622,13 +625,8 @@ Function BuildTable()
 	AddSetting(15, 0, "Supreme", "DurationSeconds", "Duracao (s)", "Duration (s)", "", "", 3.0, 30.0, 1.0, 10.0)
 	AddSetting(15, 0, "Supreme", "CooldownSeconds", "Recarga (s)", "Cooldown (s)", "Tempo ate poderes usar outra vez. O jogador tem de saber quando usar.", "Time until it can be used again.", 60.0, 1200.0, 10.0, 500.0)
 	AddSetting(15, 0, "Supreme", "CostPercentPerSecond", "Custo (% da vida por segundo)", "Cost (% of health per second)", "Nunca te mata.", "Never kills you.", 1.0, 3.0, 0.5, 2.0)
-	AddSetting(15, 0, "Supreme", "Radius", "Raio da aura", "Aura radius", "Alcance do fogo em volta de ti (100 = cerca de 1,4 m).", "Reach of the fire around you (100 = about 1.4 m).", 100.0, 600.0, 25.0, 300.0)
-	AddSetting(15, 0, "Supreme", "DamagePerSecond", "Dano de fogo por segundo", "Fire damage per second", "Dano de vida aos inimigos hostis no raio.", "Health damage to hostile enemies in range.", 0.0, 60.0, 1.0, 8.0)
-	AddSetting(11, 1, "Diagnostics", "Enabled", "Diagnostico no log", "Diagnostics in log", "Escreve o que acontece em NahIDWin.log.", "Writes what happens to NahIDWin.log.", 0.0, 1.0, 1.0, 1.0)
-	AddSetting(11, 1, "Diagnostics", "LogPlayerEvents", "Registar eventos que afetam o jogador", "Log events hitting the player", "Ajuda a descobrir a queda a meio dos combos.", "Helps find the fall during combos.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(12, 1, "Block", "DrainEnabled", "Bloqueio gasta estamina do atacante", "Block drains attacker stamina", "Bloqueio normal (sem parry) gasta estamina do atacante. Sem stagger.", "Normal block (no parry) drains the attacker's stamina. No stagger.", 0.0, 1.0, 1.0, 1.0)
 	AddSetting(12, 0, "Block", "AttackerStamina", "Estamina do atacante por golpe", "Attacker stamina per hit", "Estamina que o atacante perde por golpe bloqueado.", "Stamina the attacker loses per blocked hit.", 0.0, 60.0, 1.0, 10.0)
-	AddSetting(12, 0, "Block", "PowerAttackMult", "Golpe forte bloqueado (x)", "Blocked power attack (x)", "Multiplicador desse custo em golpes fortes.", "Multiplier of that cost for power attacks.", 0.5, 4.0, 0.1, 1.5)
 EndFunction
 
 string Function FormatFor(int i)
@@ -826,8 +824,7 @@ Function DrawPage0()
 	GTog(11, "NPC Fist Block", "NPC Bloqueia com Punhos")
 	GTog(12, "Enemy Frost Resist", "Inimigos Resistem a Gelo")
 	GTog(13, "Enemy Stagger to Magic", "Inimigos Cambaleiam com Magia")
-	GSli(14, "Perilous Attacks", "Ataques Perigosos")
-	GSli(15, "Dragon Stamina Increase", "Estamina dos Dragoes")
+	DrawBlock(16, "Bosses, giants and dragons", "Bosses, gigantes e dragoes")
 	Hdr("ALLY Plus", "Aliados Plus")
 	GTog(16, "Protect Ally From Execution", "Proteger Aliados de Execucao")
 	GTog(17, "Reduce Ally's Stamina Damage", "Reduzir Dano de Estamina dos Aliados")
