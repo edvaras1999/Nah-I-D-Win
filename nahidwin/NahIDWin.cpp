@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.17.0 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.17.1 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -300,7 +300,7 @@ namespace
 		int		wPlayer;			// barras do jogador
 		int		wPlayerAlways;		// 1 = sempre visiveis; 0 = so em combate/furia
 		int		wTarget;			// barras do alvo
-		int		wTargetRadius, wTargetStickyMs;	// raio (px) e tempo que a barra fica apos o alvo sair
+		int		wTargetRadius, wTargetStickyMs, wTargetMaxDist;	// raio (px) e tempo que a barra fica apos o alvo sair
 		int		wIcon;				// 1 = icone da furia ativa
 		int		wAnchor;			// 1 = alvo preso a barra de vida do jogo; 0 = posicao fixa
 		int		wStyle;				// 0 plana, 1 Sekiro (enche dos dois lados)
@@ -556,6 +556,7 @@ namespace
 		c.wTarget		= IniI("HUD", "Target", 1);
 		c.wTargetRadius	= IniI("HUD", "TargetRadius", 150);
 		c.wTargetStickyMs = IniI("HUD", "TargetStickyMs", 3000);
+		c.wTargetMaxDist = IniI("HUD", "TargetMaxDistance", 2000);
 		c.wIcon			= IniI("HUD", "RageIcon", 1);
 		c.wAnchor		= IniI("HUD", "TargetAnchor", 0);
 		c.wStyle		= IniI("HUD", "BarStyle", 1);
@@ -649,6 +650,8 @@ namespace
 	struct PerilSlot { int prev; DWORD ready; DWORD until; };
 	std::map<UInt32, PerilSlot> g_peril;
 	DWORD g_perilTick = 0;
+	std::map<UInt32, DWORD> g_hostile;		// inimigos do jogador: id -> ultimo golpe trocado com o jogador
+	volatile DWORD	g_execTick = 0;			// ultima execucao pedida (vigia da vida do jogador)
 	volatile LONG	g_deflectOn = 0;		// parry numa magia: enquanto segurar o bloqueio, a magia e devolvida
 	volatile DWORD	g_deflectStart = 0;
 	volatile UInt32	g_parryAtkId = 0;		// anti-duplicacao: um ataque conta um parry so
@@ -1475,6 +1478,7 @@ namespace
 		EventDispatcher<PoiseModEvent> * d = NULL;
 		if(g_messaging) d = (EventDispatcher<PoiseModEvent> *)g_messaging->GetEventDispatcher(SKSEMessagingInterface::kDispatcher_ModEvent);
 		if(!d) return;
+		g_execTick = GetTickCount();
 		_MESSAGE("EXECUTION requested: victim=%08X %s", (UInt32)ref->formID, tag);
 		PoiseModEvent evn("NahIDWin_Execute", tag, 0.0f, (TESForm *)ref);
 		if(!SafeSend(d, &evn)) InterlockedIncrement(&g_faults);
@@ -1517,7 +1521,7 @@ namespace
 		g_parryReadyAt = 0;
 		g_parryHitDone = 0;
 		g_blockHeld = 0;
-		g_peril.clear(); g_deflectOn = 0; g_parryAtkId = 0; memset(g_magicAtk, 0, sizeof(g_magicAtk)); memset(g_dot, 0, sizeof(g_dot));
+		g_peril.clear(); g_hostile.clear(); g_deflectOn = 0; g_parryAtkId = 0; memset(g_magicAtk, 0, sizeof(g_magicAtk)); memset(g_dot, 0, sizeof(g_dot));
 		g_playerBarValid = false;
 		g_prevPlayerRageState = -1;
 		g_powerUntil = 0;
@@ -1911,6 +1915,18 @@ namespace
 				}
 			}
 			if(MagicThrottle(h.victim.id, h.attackerId, h.sourceId, now, &dotSustained)) return;
+		}
+		if(h.attackerIsActor && h.attackerId != 0 && h.victim.id != 0)
+		{
+			// quem trocou golpes com o jogador e hostil a ele (usado para escolher a barra do alvo)
+			const UInt32 other = h.victim.isPlayer ? h.attackerId : (h.attackerId == 0x14 ? h.victim.id : 0);
+			if(other && other != 0x14)
+			{
+				Lock();
+				if(g_hostile.size() > 300) g_hostile.clear();
+				g_hostile[other] = now;
+				Unlock();
+			}
 		}
 		InterlockedIncrement(&g_hits);
 		NoteCombatant(h.victimRef, h.victim.id);
@@ -2449,6 +2465,17 @@ namespace
 						}
 						InterlockedExchange(&g_lifePending, 1);
 					}
+				}
+			}
+			if(isPlayer)
+			{
+				static volatile LONG lethalLogged = 0;
+				float ch = 0.0f, mh = 0.0f;
+				if(lethalLogged < 60 && ReadAV(self, 24, &ch, &mh) && ch + result <= 0.0f)
+				{
+					InterlockedIncrement(&lethalLogged);
+					_MESSAGE("PLAYER LETHAL HIT: hp=%.1f/%.1f damage=%.1f attacker=%08X (%s) essential=%d lives=%d invuln=%d msSinceExecution=%d", ch, mh, -result, attacker ? attacker->formID : 0, why,
+						(int)PlayerEssentialFlag(), (int)LivesAvailable(self), (int)((LONG)(now - g_invulnUntil) < 0), g_execTick ? (int)(now - g_execTick) : -1);
 				}
 			}
 			if(isPlayer && g_cfg.diag && g_cfg.logPlayerDamage && g_hdPlayerLogged < 150)
@@ -3328,6 +3355,14 @@ namespace
 			Actor * a = ActorFromFormId(id);
 			if(!a || id == 0x14 || (a->flags1 & Actor::kFlags_IsPlayerTeammate)) return -1.0f;
 			if(Engine::LifeState(a) != 0) return -1.0f;
+			PlayerCharacter * pc = Engine::Player();
+			if(!pc) return -1.0f;
+			if(!a->IsInCombat()) return -1.0f;
+			{
+				const float ddx = a->pos.x - pc->pos.x, ddy = a->pos.y - pc->pos.y, ddz = a->pos.z - pc->pos.z;
+				const float md = (float)g_cfg.wTargetMaxDist;
+				if(ddx * ddx + ddy * ddy + ddz * ddz > md * md) return -1.0f;
+			}
 			float x, y, z, sx, sy;
 			if(!ReadHeadPos(a, &x, &y, &z) || !ProjectPoint(x, y, z, &sx, &sy)) return -1.0f;
 			if(sx < 0.0f || sx > 1.0f || sy < 0.0f || sy > 1.0f) return -1.0f;
@@ -3347,7 +3382,7 @@ namespace
 		g_radTick = now;
 		UInt32 ids[256]; int n = 0;
 		Lock();
-		for(std::set<UInt32>::iterator it = g_combatants.begin(); it != g_combatants.end() && n < 256; ++it) ids[n++] = *it;
+		for(std::map<UInt32, DWORD>::iterator it = g_hostile.begin(); it != g_hostile.end() && n < 256; ++it) if(now - it->second < 60000) ids[n++] = it->first;
 		Unlock();
 		UInt32 best = 0; float bestD = (float)g_cfg.wTargetRadius;
 		for(int i = 0; i < n; i++)
@@ -3426,6 +3461,19 @@ namespace
 		if(!ready) return;
 		TickSupreme(now);
 		TickPerilous(now);
+		if(g_execTick && now - g_execTick < 15000)
+		{
+			// vigia da vida do jogador depois de uma execucao (para descobrir o que o mata)
+			static DWORD lastW = 0; static float lastHp = -1.0f;
+			if(now - lastW >= 200)
+			{
+				lastW = now;
+				float c = 0.0f, m = 0.0f;
+				if(ReadAV((Actor *)Engine::Player(), 24, &c, &m) && (lastHp < 0.0f || c < lastHp - 2.0f || c <= 0.5f))
+					_MESSAGE("EXEC-WATCH: %d ms after execution: player hp %.1f/%.1f (before %.1f) essential=%d lives=%d", (int)(now - g_execTick), c, m, lastHp, (int)PlayerEssentialFlag(), (int)LivesAvailable((Actor *)Engine::Player()));
+				if(c > 0.0f || lastHp < 0.0f) lastHp = c;
+			}
+		}
 		SyncEssential();
 
 		BarInfo pi = { 1.0f, 0, 1.0f, false, 0.0f };

@@ -43,8 +43,9 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	RegisterForModEvent("NahIDWin_Perilous", "OnNahPerilous")
 	RegisterForSleep()
 	NahIDWinNative.SetLivesUsed(livesUsed)
+	executing = false
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.17.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.17.1: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -108,6 +109,7 @@ EndEvent
 ; ---------------- vidas extra do jogador ----------------
 int livesUsed = 0
 bool sleptInBed = false
+bool executing = false
 
 ; A DLL avisa quando uma vida extra foi gasta (numArg = quantas ja gastas): ouro, aviso e brilho.
 ; Marca/desmarca "essencial" (como o SkyTweak): o jogo so faz o bleedout verdadeiro se a flag ja la estiver.
@@ -149,12 +151,27 @@ Function OnNahExecute(string eventName, string strArg, float numArg, Form sender
 		NahIDWinNative.Log("execution: Inpa killmove mode " + mode + " has no spell")
 		return
 	endif
-	Utility.Wait(0.35)
-	if v.IsDead() || v.IsInKillMove()
+	if executing
+		NahIDWinNative.Log("execution: skipped (another one is still running)")
 		return
 	endif
-	NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ") on " + v)
+	executing = true
+	Utility.Wait(0.35)
+	if v.IsDead() || v.IsInKillMove() || pl.IsInKillMove()
+		NahIDWinNative.Log("execution: skipped (victim dead or a kill move already running)")
+		executing = false
+		return
+	endif
+	NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ") on " + v + " player hp " + pl.GetActorValue("Health"))
 	sp.Cast(v, pl)
+	; registo da vida do jogador durante e depois da execucao (para descobrir o que o mata)
+	int i = 0
+	while i < 14
+		Utility.Wait(0.5)
+		i += 1
+		NahIDWinNative.Log("execution watch " + i + ": player hp " + pl.GetActorValue("Health") + " dead=" + pl.IsDead() + " killmove=" + pl.IsInKillMove() + " victim dead=" + v.IsDead())
+	endWhile
+	executing = false
 EndFunction
 
 ; Deflect: o feitico que acertou o jogador e relancado no conjurador.
