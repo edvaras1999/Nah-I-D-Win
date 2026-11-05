@@ -45,7 +45,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	executing = false
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.18.1: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.18.2: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()

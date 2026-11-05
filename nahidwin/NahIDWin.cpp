@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.18.1 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.18.2 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -652,7 +652,7 @@ namespace
 	DWORD g_perilTick = 0;
 	std::map<UInt32, DWORD> g_hostile;		// inimigos do jogador: id -> ultimo golpe trocado com o jogador
 	volatile DWORD	g_execTick = 0;			// ultima execucao pedida (vigia da vida do jogador)
-	struct FleeSlot { int combat; DWORD lastLog; };
+	struct FleeSlot { int combat; DWORD lastLog; int seen; };
 	std::map<UInt32, FleeSlot> g_flee;
 	DWORD g_fleeTick = 0;
 	volatile LONG	g_deflectOn = 0;		// parry numa magia: enquanto segurar o bloqueio, a magia e devolvida
@@ -1831,6 +1831,7 @@ namespace
 		}
 	}
 
+	int CollectEngineHostiles(UInt32 * ids, int n, int cap);
 	// ---- vigia de fugas: regista quando um inimigo hostil deixa de estar em combate com vida (para descobrir porque fogem)
 	bool ReadFleeInfo(UInt32 id, int * inCombat, float * hp, float * hpMax, float * st, float * stMax, float * dist, float * ex)
 	{
@@ -1859,19 +1860,29 @@ namespace
 		g_fleeTick = now;
 		UInt32 ids[64]; DWORD hitAt[64]; int n = 0;
 		Lock();
-		for(std::map<UInt32, DWORD>::iterator it = g_hostile.begin(); it != g_hostile.end() && n < 64; ++it) if(now - it->second < 20000) { ids[n] = it->first; hitAt[n] = it->second; n++; }
+		for(std::map<UInt32, DWORD>::iterator it = g_hostile.begin(); it != g_hostile.end() && n < 48; ++it) if(now - it->second < 20000) { ids[n] = it->first; hitAt[n] = it->second; n++; }
 		Unlock();
+		{
+			UInt32 eh[16]; const int m = CollectEngineHostiles(eh, 0, 16);	// hostis do jogo, mesmo sem trocar golpes
+			for(int k = 0; k < m && n < 64; k++)
+			{
+				bool dup = false;
+				for(int q = 0; q < n; q++) if(ids[q] == eh[k]) { dup = true; break; }
+				if(!dup) { ids[n] = eh[k]; hitAt[n] = 0; n++; }
+			}
+		}
 		for(int i = 0; i < n; i++)
 		{
 			int c = 0; float hp = 0, hm = 0, st = 0, sm = 0, d = 0, ex[3];
 			if(!ReadFleeInfo(ids[i], &c, &hp, &hm, &st, &sm, &d, ex)) continue;
-			bool log = false;
+			bool log = false, seenLog = false;
 			float poise = -1.0f, posture = -1.0f; int bleed = 0, rage = 0;
 			Lock();
 			{
 				FleeSlot & sl = g_flee[ids[i]];
 				if(sl.combat == 1 && c == 0 && now - sl.lastLog > 3000) { log = true; sl.lastLog = now; }
 				sl.combat = c;
+				if(!sl.seen) { sl.seen = 1; seenLog = true; }
 				if(log)
 				{
 					StateMap::iterator it = g_states.find(ids[i]);
@@ -1887,7 +1898,8 @@ namespace
 				if(g_flee.size() > 300) g_flee.clear();
 			}
 			Unlock();
-			if(log) _MESSAGE("FLEE-WATCH: %08X left combat (alive) hp=%.0f/%.0f stamina=%.0f/%.0f poise=%.2f posture=%.2f bleedout=%d rage=%d dist=%.0f aggression=%.0f confidence=%.0f speedMult=%.0f msSinceHitWithPlayer=%d", ids[i], hp, hm, st, sm, poise, posture, bleed, rage, d, ex[0], ex[1], ex[2], (int)(now - hitAt[i]));
+			if(seenLog) _MESSAGE("HOSTILE-SEEN: %08X combat=%d hp=%.0f/%.0f stamina=%.0f/%.0f aggression=%.0f confidence=%.0f speedMult=%.0f dist=%.0f", ids[i], c, hp, hm, st, sm, ex[0], ex[1], ex[2], d);
+			if(log) _MESSAGE("FLEE-WATCH: %08X left combat (alive) hp=%.0f/%.0f stamina=%.0f/%.0f poise=%.2f posture=%.2f bleedout=%d rage=%d dist=%.0f aggression=%.0f confidence=%.0f speedMult=%.0f msSinceHitWithPlayer=%d", ids[i], hp, hm, st, sm, poise, posture, bleed, rage, d, ex[0], ex[1], ex[2], hitAt[i] ? (int)(now - hitAt[i]) : -1);
 		}
 	}
 
@@ -2732,11 +2744,32 @@ namespace
 		return false;
 	}
 
+	volatile DWORD g_lastBlockHitAnim = 0;
 	// Sem objetos com destrutor: pode usar __try.
 	bool ShouldBlockNotify(void * holder, const BSFixedString * evn)
 	{
 		__try
 		{
+			if(g_cfg.diag && evn && evn->data && (_strnicmp(evn->data, "block", 5) == 0 || _strnicmp(evn->data, "recoil", 6) == 0 || _strnicmp(evn->data, "parry", 5) == 0))
+			{
+				static volatile LONG animLogged = 0;
+				if(animLogged < 300 && *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C) == 0x14)
+				{
+					InterlockedIncrement(&animLogged);
+					_MESSAGE("PLAYER-ANIM-EVENT: %s (own=%d t=%u)", evn->data, (int)g_ownNotify, (unsigned)GetTickCount());
+				}
+			}
+			// um golpe bloqueado so toca uma animacao de impacto no bloqueio (o Inpa e o jogo mandavam as duas)
+			if(!g_ownNotify && g_cfg.enabled && evn && evn->data && _stricmp(evn->data, "blockHitStart") == 0)
+			{
+				const UInt32 bid = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);
+				if(bid == 0x14)
+				{
+					const DWORD t = GetTickCount();
+					if(g_lastBlockHitAnim && t - g_lastBlockHitAnim < 600) { InterlockedIncrement(&g_shieldBlocked); return true; }
+					g_lastBlockHitAnim = t;
+				}
+			}
 			if(!g_ownNotify && g_cfg.enabled && g_exhaustBlockUntil && (LONG)(GetTickCount() - g_exhaustBlockUntil) < 0 && evn && IsExhaustBlockedName(evn->data))
 			{
 				const UInt32 pid = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);

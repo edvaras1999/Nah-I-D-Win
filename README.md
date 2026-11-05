@@ -163,3 +163,7 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Barras so para inimigos hostis (criterio do proprio jogo), tambem no lock-on e na mira.
 - Execucao: `[Execution] Method` (0 espera pela execucao do Inpa para nao haver duas ao mesmo tempo).
 - `FLEE-WATCH` com agressao, confianca e velocidade.
+
+## v0.18.2
+- Parry: o evento de animacao `blockHitStart` do jogador so passa uma vez por 600 ms (a animacao do parry tocava duas vezes). Registo `PLAYER-ANIM-EVENT` para confirmar.
+- Vigia de NPCs: tambem os hostis do jogo que ainda nao trocaram golpes (`HOSTILE-SEEN`, `FLEE-WATCH`).
