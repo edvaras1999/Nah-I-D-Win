@@ -21,3 +21,4 @@ ActorBase Function GetActorBase() native
 Function StartCombat(Actor akTarget) native
 bool Function IsBleedingOut() native
 Function Kill(Actor akKiller = None) native
+bool Function IsGhost() native

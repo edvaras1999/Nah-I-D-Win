@@ -58,7 +58,7 @@
 #include <functional>
 
 #define PLUGIN_NAME			"NahIDWin"
-#define PLUGIN_VERSION_STR	"0.18.0 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
+#define PLUGIN_VERSION_STR	"0.18.1 (alvo Soft Target + raio no ecra; bosses por nivel; magia continua; deflexao; ataque perigoso; execucao; bosses; fogo; bleedout fiavel; vidas extra com bleedout; bosses com 2 vidas; barras novas; Supremo Rage com aura; menu retratil; empurrao corrigido; escudo de stagger;  Poise + Postura + estamina; Inpa Sekiro fundido, menu unico, poisebreak do Inpa na nossa postura)"
 #define PLUGIN_LOG_FILE		"\\My Games\\Skyrim\\SKSE\\NahIDWin.log"
 
 static PluginHandle				g_pluginHandle	= kPluginHandle_Invalid;
@@ -1832,7 +1832,7 @@ namespace
 	}
 
 	// ---- vigia de fugas: regista quando um inimigo hostil deixa de estar em combate com vida (para descobrir porque fogem)
-	bool ReadFleeInfo(UInt32 id, int * inCombat, float * hp, float * hpMax, float * st, float * stMax, float * dist)
+	bool ReadFleeInfo(UInt32 id, int * inCombat, float * hp, float * hpMax, float * st, float * stMax, float * dist, float * ex)
 	{
 		__try
 		{
@@ -1842,6 +1842,11 @@ namespace
 			*inCombat = a->IsInCombat() ? 1 : 0;
 			ReadAV(a, 24, hp, hpMax);
 			ReadAV(a, 26, st, stMax);
+			float t0 = 0.0f, t1 = 0.0f;
+			ex[0] = ex[1] = ex[2] = -1.0f;
+			if(ReadAV(a, 0, &t0, &t1)) ex[0] = t0;	// Aggression
+			if(ReadAV(a, 1, &t0, &t1)) ex[1] = t0;	// Confidence
+			if(ReadAV(a, 30, &t0, &t1)) ex[2] = t0;	// SpeedMult
 			const float dx = a->pos.x - pc->pos.x, dy = a->pos.y - pc->pos.y;
 			*dist = sqrtf(dx * dx + dy * dy);
 			return true;
@@ -1858,8 +1863,8 @@ namespace
 		Unlock();
 		for(int i = 0; i < n; i++)
 		{
-			int c = 0; float hp = 0, hm = 0, st = 0, sm = 0, d = 0;
-			if(!ReadFleeInfo(ids[i], &c, &hp, &hm, &st, &sm, &d)) continue;
+			int c = 0; float hp = 0, hm = 0, st = 0, sm = 0, d = 0, ex[3];
+			if(!ReadFleeInfo(ids[i], &c, &hp, &hm, &st, &sm, &d, ex)) continue;
 			bool log = false;
 			float poise = -1.0f, posture = -1.0f; int bleed = 0, rage = 0;
 			Lock();
@@ -1882,7 +1887,7 @@ namespace
 				if(g_flee.size() > 300) g_flee.clear();
 			}
 			Unlock();
-			if(log) _MESSAGE("FLEE-WATCH: %08X left combat (alive) hp=%.0f/%.0f stamina=%.0f/%.0f poise=%.2f posture=%.2f bleedout=%d rage=%d dist=%.0f msSinceHitWithPlayer=%d", ids[i], hp, hm, st, sm, poise, posture, bleed, rage, d, (int)(now - hitAt[i]));
+			if(log) _MESSAGE("FLEE-WATCH: %08X left combat (alive) hp=%.0f/%.0f stamina=%.0f/%.0f poise=%.2f posture=%.2f bleedout=%d rage=%d dist=%.0f aggression=%.0f confidence=%.0f speedMult=%.0f msSinceHitWithPlayer=%d", ids[i], hp, hm, st, sm, poise, posture, bleed, rage, d, ex[0], ex[1], ex[2], (int)(now - hitAt[i]));
 		}
 	}
 
@@ -2692,6 +2697,7 @@ namespace
 		return NULL;
 	}
 
+	volatile DWORD g_exhaustBlockUntil = 0;	// exaustao do jogador: ataque, ataque forte, bloqueio, salto e bash ficam bloqueados no grafo de animacao
 	volatile DWORD g_ownAnimUntil = 0;		// o Papyrus esta a enviar a animacao de bleedout/stagger do mod
 	struct BleedAcc { UInt32 id; DWORD tick; int ok; };
 	BleedAcc g_bleedAcc[8];
@@ -2716,11 +2722,26 @@ namespace
 		return true;
 	}
 
+	// Pedidos de acao do jogador que a exaustao impede (as paragens passam sempre).
+	bool IsExhaustBlockedName(const char * n)
+	{
+		if(!n) return false;
+		if(strstr(n, "Stop") || strstr(n, "stop") || strstr(n, "End") || strstr(n, "Exit") || strstr(n, "Release") || strstr(n, "release")) return false;
+		if(_strnicmp(n, "attack", 6) == 0 || _strnicmp(n, "bash", 4) == 0 || _strnicmp(n, "blockStart", 10) == 0) return true;
+		if(_strnicmp(n, "jump", 4) == 0 && (strstr(n, "Start") || strstr(n, "start"))) return true;
+		return false;
+	}
+
 	// Sem objetos com destrutor: pode usar __try.
 	bool ShouldBlockNotify(void * holder, const BSFixedString * evn)
 	{
 		__try
 		{
+			if(!g_ownNotify && g_cfg.enabled && g_exhaustBlockUntil && (LONG)(GetTickCount() - g_exhaustBlockUntil) < 0 && evn && IsExhaustBlockedName(evn->data))
+			{
+				const UInt32 pid = *(UInt32 *)((UInt8 *)holder - 0x20 + 0x0C);
+				if(pid == 0x14) { InterlockedIncrement(&g_shieldBlocked); return true; }
+			}
 			if(g_ownNotify || !g_cfg.rageStaggerShield || !g_cfg.enabled) return false;
 			if((LONG)(GetTickCount() - g_ownAnimUntil) < 0) return false;
 			if(!evn || !IsHitReactionName(evn->data)) return false;
@@ -3186,7 +3207,7 @@ namespace
 			}
 		}
 		Unlock();
-		if(ok) _MESSAGE("EXHAUSTION: player ran out of stamina by swinging");
+		if(ok) { g_exhaustBlockUntil = GetTickCount() + (DWORD)(g_cfg.exhaustSeconds * 1000.0f); _MESSAGE("EXHAUSTION: player ran out of stamina by swinging"); }
 		return ok;
 	}
 
@@ -3405,6 +3426,19 @@ namespace
 		return NULL;
 	}
 
+	// Hostil ao jogador segundo o proprio jogo (so estes ganham barra).
+	bool IsHostileActor(Actor * a)
+	{
+		__try
+		{
+			PlayerCharacter * pc = Engine::Player();
+			if(!a || !pc || a == (Actor *)pc) return false;
+			if(a->flags1 & Actor::kFlags_IsPlayerTeammate) return false;
+			return CALL_MEMBER_FN(a, IsHostileToActor)((Actor *)pc);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+	}
+
 	// Distancia (px) do ator ao centro do ecra; <0 se invalido/fora do ecra.
 	float ScreenDistFromCenter(UInt32 id)
 	{
@@ -3415,7 +3449,7 @@ namespace
 			if(Engine::LifeState(a) != 0) return -1.0f;
 			PlayerCharacter * pc = Engine::Player();
 			if(!pc) return -1.0f;
-			if(!a->IsInCombat()) return -1.0f;
+			if(!IsHostileActor(a)) return -1.0f;
 			{
 				const float ddx = a->pos.x - pc->pos.x, ddy = a->pos.y - pc->pos.y, ddz = a->pos.z - pc->pos.z;
 				const float md = (float)g_cfg.wTargetMaxDist;
@@ -3430,6 +3464,23 @@ namespace
 		__except(EXCEPTION_EXECUTE_HANDLER) { return -1.0f; }
 	}
 
+	// Inimigos que o jogo considera hostis ao jogador neste momento (lista do proprio jogador).
+	int CollectEngineHostiles(UInt32 * ids, int n, int cap)
+	{
+		__try
+		{
+			PlayerCharacter * pc = Engine::Player();
+			if(!pc) return n;
+			for(UInt32 i = 0; i < pc->hostileHandles.count && n < cap; i++)
+			{
+				Actor * a = ActorFromHandle(pc->hostileHandles[i]);
+				if(a) ids[n++] = a->formID;
+			}
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) { }
+		return n;
+	}
+
 	UInt32		g_radId = 0;
 	DWORD		g_radTick = 0, g_radSeen = 0;
 	// Inimigo em combate mais perto do centro do ecra, dentro do raio. Calculado no maximo 10 vezes por segundo.
@@ -3442,6 +3493,7 @@ namespace
 		Lock();
 		for(std::map<UInt32, DWORD>::iterator it = g_hostile.begin(); it != g_hostile.end() && n < 256; ++it) if(now - it->second < 60000) ids[n++] = it->first;
 		Unlock();
+		n = CollectEngineHostiles(ids, n, 256);
 		UInt32 best = 0; float bestD = (float)g_cfg.wTargetRadius;
 		for(int i = 0; i < n; i++)
 		{
@@ -3465,15 +3517,17 @@ namespace
 			if(!pc) return NULL;
 			const DWORD now = GetTickCount();
 			Actor * t = ActorFromFormId(SoftTargetId());
-			if(t && Engine::LifeState(t) == 0) *how = 3;
+			if(t && Engine::LifeState(t) == 0 && IsHostileActor(t)) *how = 3;
 			else
 			{
 				t = ActorFromHandle(pc->targetHandle);
+				if(t && !IsHostileActor(t)) t = NULL;
 				if(t) *how = 1;
 				else
 				{
 					CrosshairRefHandleHolder * ch = CrosshairRefHandleHolder::GetSingleton();
 					if(ch) t = ActorFromHandle(ch->CrosshairRefHandle());
+					if(t && !IsHostileActor(t)) t = NULL;
 					if(t) *how = 2;
 					else
 					{

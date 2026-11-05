@@ -157,3 +157,9 @@ seguem o mod "SGC Stagger on hit". Referencias: doodlum "Poise" (SE) e a API do 
 - Furia automatica dos NPCs: so bosses e gigantes/dragoes.
 - `FLEE-WATCH` no log: regista quando um inimigo hostil deixa de combater estando vivo.
 - Supremo Rage: lanca a marca `NahIDWin_SupAnim` (3 s, so no pacote privado) e envia o evento `[Supreme] ActivationAnim` (por defeito `attackPowerStartForward`). O Dynamic Animation Replacer usa a marca como condicao (pacote privado).
+
+## v0.18.1
+- Exaustao do jogador: ataque, ataque forte, bash, bloqueio e salto ficam bloqueados no grafo de animacao durante `[Exhaustion] Seconds`, sem bloquear os controlos.
+- Barras so para inimigos hostis (criterio do proprio jogo), tambem no lock-on e na mira.
+- Execucao: `[Execution] Method` (0 espera pela execucao do Inpa para nao haver duas ao mesmo tempo).
+- `FLEE-WATCH` com agressao, confianca e velocidade.

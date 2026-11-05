@@ -45,7 +45,7 @@ Function OnNahLoad(string eventName, string strArg, float numArg, Form sender)
 	NahIDWinNative.SetLivesUsed(livesUsed)
 	executing = false
 	RegisterInputs()
-	NahIDWinNative.Log("bridge 0.18.0: eventos de mod e de animacao registados")
+	NahIDWinNative.Log("bridge 0.18.1: eventos de mod e de animacao registados")
 	; o Inpa reaplica os Game Settings dele ao carregar (bloqueio dos NPCs a 0.60); depois disso repomos o valor escolhido no menu
 	Utility.Wait(8.0)
 	ApplyNpcBlock()
@@ -156,20 +156,50 @@ Function OnNahExecute(string eventName, string strArg, float numArg, Form sender
 		return
 	endif
 	executing = true
-	Utility.Wait(0.35)
-	if v.IsDead() || v.IsInKillMove() || pl.IsInKillMove()
-		NahIDWinNative.Log("execution: skipped (victim dead or a kill move already running)")
+	; [Execution] Method: 0 = espera pela execucao do proprio Inpa e so lanca a nossa se ela nao arrancar (evita duas execucoes ao mesmo tempo);
+	; 1 = lanca logo a execucao do Inpa (comportamento antigo); 2 = mata o alvo diretamente, sem animacao.
+	int method = NahIDWinNative.IniGetF("Execution", "Method", 0.0) as int
+	GlobalVariable hd = Game.GetFormFromFile(0x007BFDB8, "NahIDWin.esp") as GlobalVariable
+	if method == 2
+		Utility.Wait(0.3)
+		NahIDWinNative.Log("execution: method 2, direct kill " + v)
+		if !v.IsDead()
+			v.Kill(pl)
+		endif
 		executing = false
 		return
 	endif
-	NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ") on " + v + " player hp " + pl.GetActorValue("Health"))
-	sp.Cast(v, pl)
+	bool inpaRunning = false
+	if method == 0
+		int w = 0
+		while w < 6 && !inpaRunning
+			Utility.Wait(0.2)
+			w += 1
+			if v.IsDead() || v.IsInKillMove() || pl.IsInKillMove()
+				inpaRunning = true
+			elseif hd && hd.GetValue() > 0.5
+				inpaRunning = true
+			endif
+		endWhile
+	else
+		Utility.Wait(0.35)
+	endif
+	if inpaRunning
+		NahIDWinNative.Log("execution: Inpa's own execution is already running (kill move/global/victim dead), ours is not cast")
+	elseif v.IsDead() || v.IsInKillMove() || pl.IsInKillMove()
+		NahIDWinNative.Log("execution: skipped (victim dead or a kill move already running)")
+		executing = false
+		return
+	else
+		NahIDWinNative.Log("execution: casting Inpa execution (mode " + mode + ", method " + method + ") on " + v + " player hp " + pl.GetActorValue("Health"))
+		sp.Cast(v, pl)
+	endif
 	; registo da vida do jogador durante e depois da execucao (para descobrir o que o mata)
 	int i = 0
 	while i < 14
 		Utility.Wait(0.5)
 		i += 1
-		NahIDWinNative.Log("execution watch " + i + ": player hp " + pl.GetActorValue("Health") + " dead=" + pl.IsDead() + " killmove=" + pl.IsInKillMove() + " victim dead=" + v.IsDead())
+		NahIDWinNative.Log("execution watch " + i + ": player hp " + pl.GetActorValue("Health") + " dead=" + pl.IsDead() + " killmove=" + pl.IsInKillMove() + " ghost=" + pl.IsGhost() + " victim dead=" + v.IsDead())
 	endWhile
 	executing = false
 EndFunction
